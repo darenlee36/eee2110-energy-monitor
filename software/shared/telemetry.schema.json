@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/eee2110/telemetry-batch-v1.schema.json",
+  "title": "EEE2110 telemetry batch version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["batch_id", "readings"],
+  "properties": {
+    "batch_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "readings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/reading"}
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "reading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_id",
+        "profile_id",
+        "timestamp",
+        "sample_sequence",
+        "device_uptime_ms",
+        "voltage_v",
+        "current_a",
+        "active_power_w",
+        "cumulative_energy_kwh",
+        "frequency_hz",
+        "power_factor",
+        "appliance_state",
+        "battery_voltage_v",
+        "connection_state",
+        "anomaly_status",
+        "quality_status",
+        "firmware_version"
+      ],
+      "properties": {
+        "device_id": {"$ref": "#/$defs/identifier"},
+        "profile_id": {"$ref": "#/$defs/identifier"},
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "sample_sequence": {"type": "integer", "minimum": 0},
+        "device_uptime_ms": {"type": "integer", "minimum": 0},
+        "voltage_v": {"type": "number", "minimum": 0, "maximum": 300},
+        "current_a": {"type": "number", "minimum": 0, "maximum": 100},
+        "active_power_w": {"type": "number", "minimum": 0, "maximum": 25000},
+        "cumulative_energy_kwh": {"type": "number", "minimum": 0},
+        "frequency_hz": {"type": "number", "minimum": 40, "maximum": 70},
+        "power_factor": {"type": "number", "minimum": 0, "maximum": 1},
+        "appliance_state": {"enum": ["off", "heating", "unknown"]},
+        "battery_voltage_v": {"type": "number", "minimum": 2.5, "maximum": 4.5},
+        "connection_state": {"enum": ["online", "stale", "offline"]},
+        "anomaly_status": {"enum": ["not_evaluated", "normal", "anomaly"]},
+        "quality_status": {
+          "enum": ["valid", "read_error", "communication_gap", "power_interruption"]
+        },
+        "firmware_version": {"type": "string", "minLength": 1, "maxLength": 32}
+      }
+    }
+  }
+}

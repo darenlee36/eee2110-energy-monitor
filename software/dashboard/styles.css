@@ -1,0 +1,64 @@
+:root {
+  --monitor-ink: #17202a;
+  --monitor-muted: #5d6875;
+  --monitor-line: #dbe1e7;
+  --monitor-accent: #0b7285;
+  --monitor-surface: #f5f7f8;
+}
+
+.stApp {
+  color: var(--monitor-ink);
+}
+
+[data-testid="stAppViewContainer"] > .main {
+  background: #ffffff;
+}
+
+[data-testid="stMetric"] {
+  background: var(--monitor-surface);
+  border: 1px solid var(--monitor-line);
+  border-radius: 0.5rem;
+  padding: 0.9rem 1rem;
+}
+
+[data-testid="stMetricLabel"] {
+  color: var(--monitor-muted);
+}
+
+[data-testid="stMetricValue"] {
+  color: var(--monitor-ink);
+}
+
+.monitor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.15rem 0 1rem;
+  color: var(--monitor-muted);
+  font-size: 0.95rem;
+}
+
+.monitor-status strong {
+  color: var(--monitor-ink);
+  text-transform: capitalize;
+}
+
+.monitor-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--monitor-accent);
+}
+
+@media (max-width: 640px) {
+  .block-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 1.5rem;
+  }
+
+  [data-testid="stMetric"] {
+    min-height: 6.5rem;
+  }
+}
+

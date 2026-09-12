@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fyp-energy-monitor"
+version = "0.1.0"
+description = "Software-first telemetry pipeline for the EEE2110 appliance energy monitor"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28,<1",
+  "pandas>=2.2,<3",
+  "plotly>=6,<7",
+  "pydantic>=2.10,<3",
+  "python-dotenv>=1,<2",
+  "streamlit>=1.48,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "jsonschema>=4.23,<5",
+  "platformio>=6.1,<7",
+  "pytest>=8.3,<10",
+  "ruff>=0.9,<1",
+]
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
