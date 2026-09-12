@@ -3,7 +3,39 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from energy_monitor.models import TelemetryBatch, TelemetryReading
+from energy_monitor.models import (
+    CycleAssessment,
+    CycleDetectionSettings,
+    CycleStatus,
+    TelemetryBatch,
+    TelemetryReading,
+    VolumeClass,
+)
+
+
+def test_cycle_detection_settings_use_approved_simulation_defaults() -> None:
+    settings = CycleDetectionSettings.simulation_defaults()
+
+    assert settings.version == "sim-cycle-v1"
+    assert settings.start_power_w == 1000.0
+    assert settings.start_confirm_samples == 2
+    assert settings.stop_power_w == 100.0
+    assert settings.stop_confirm_samples == 3
+    assert settings.warning_gap_seconds == 15
+    assert settings.terminating_gap_seconds == 60
+    assert settings.minimum_duration_seconds == 30
+    assert settings.maximum_duration_seconds == 600
+    assert settings.energy_difference_tolerance == 0.20
+
+
+def test_cycle_and_volume_enums_have_only_approved_values() -> None:
+    assert {item.value for item in CycleStatus} == {"active", "completed", "incomplete"}
+    assert {item.value for item in CycleAssessment} == {
+        "not_evaluated", "normal", "unusual", "insufficient_data"
+    }
+    assert {item.value for item in VolumeClass} == {
+        "0.5_l", "1.0_l", "1.5_l", "unknown"
+    }
 
 
 def valid_reading(**overrides: object) -> dict[str, object]:

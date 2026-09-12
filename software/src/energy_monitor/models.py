@@ -32,6 +32,64 @@ class QualityStatus(StrEnum):
     POWER_INTERRUPTION = "power_interruption"
 
 
+class CycleStatus(StrEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    INCOMPLETE = "incomplete"
+
+
+class CycleAssessment(StrEnum):
+    NOT_EVALUATED = "not_evaluated"
+    NORMAL = "normal"
+    UNUSUAL = "unusual"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+class VolumeClass(StrEnum):
+    HALF_LITRE = "0.5_l"
+    ONE_LITRE = "1.0_l"
+    ONE_AND_HALF_LITRES = "1.5_l"
+    UNKNOWN = "unknown"
+
+
+class CycleDetectionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version: str = Field(min_length=1, max_length=64)
+    start_power_w: float = Field(gt=0)
+    start_confirm_samples: int = Field(ge=1)
+    stop_power_w: float = Field(ge=0)
+    stop_confirm_samples: int = Field(ge=1)
+    warning_gap_seconds: int = Field(gt=0)
+    terminating_gap_seconds: int = Field(gt=0)
+    minimum_duration_seconds: int = Field(gt=0)
+    maximum_duration_seconds: int = Field(gt=0)
+    energy_difference_tolerance: float = Field(gt=0, le=1)
+
+    @model_validator(mode="after")
+    def thresholds_must_be_ordered(self) -> CycleDetectionSettings:
+        if self.terminating_gap_seconds <= self.warning_gap_seconds:
+            raise ValueError("terminating gap must be greater than warning gap")
+        if self.maximum_duration_seconds <= self.minimum_duration_seconds:
+            raise ValueError("maximum duration must be greater than minimum duration")
+        return self
+
+    @classmethod
+    def simulation_defaults(cls) -> CycleDetectionSettings:
+        return cls(
+            version="sim-cycle-v1",
+            start_power_w=1000.0,
+            start_confirm_samples=2,
+            stop_power_w=100.0,
+            stop_confirm_samples=3,
+            warning_gap_seconds=15,
+            terminating_gap_seconds=60,
+            minimum_duration_seconds=30,
+            maximum_duration_seconds=600,
+            energy_difference_tolerance=0.20,
+        )
+
+
 class TelemetryReading(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -79,4 +137,60 @@ class BatchResult(BaseModel):
     accepted: int = Field(ge=0)
     duplicates: int = Field(ge=0)
     replayed: bool
+
+
+class CycleSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cycle_id: UUID
+    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    profile_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    started_at: datetime
+    ended_at: datetime | None
+    start_sequence: int = Field(ge=0)
+    end_sequence: int | None = Field(default=None, ge=0)
+    status: CycleStatus
+    assessment: CycleAssessment
+    duration_seconds: int = Field(ge=0)
+    meter_energy_kwh: float = Field(ge=0)
+    integrated_energy_kwh: float = Field(ge=0)
+    energy_difference_ratio: float = Field(ge=0)
+    average_power_w: float = Field(ge=0)
+    peak_power_w: float = Field(ge=0)
+    average_voltage_v: float = Field(ge=0)
+    minimum_voltage_v: float = Field(ge=0)
+    maximum_voltage_v: float = Field(ge=0)
+    average_current_a: float = Field(ge=0)
+    average_power_factor: float = Field(ge=0, le=1)
+    sample_count: int = Field(ge=0)
+    valid_sample_count: int = Field(ge=0)
+    invalid_sample_count: int = Field(ge=0)
+    missing_sample_count: int = Field(ge=0)
+    gap_count: int = Field(ge=0)
+    largest_gap_seconds: int = Field(ge=0)
+    quality_note: str
+    detection_version: str = Field(min_length=1, max_length=64)
+    predicted_volume: VolumeClass | None = None
+    prediction_confidence: float | None = Field(default=None, ge=0, le=1)
+    volume_model_version: str | None = None
+    effective_volume: VolumeClass = VolumeClass.UNKNOWN
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def timestamps_must_include_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return value
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("cycle timestamps must include a timezone")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def cycle_boundaries_must_be_consistent(self) -> CycleSummary:
+        if self.status != CycleStatus.ACTIVE and self.ended_at is None:
+            raise ValueError("non-active cycles require ended_at")
+        if self.end_sequence is not None and self.end_sequence < self.start_sequence:
+            raise ValueError("end_sequence must not precede start_sequence")
+        if self.valid_sample_count + self.invalid_sample_count != self.sample_count:
+            raise ValueError("valid and invalid sample counts must equal sample_count")
+        return self
 
