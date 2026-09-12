@@ -5,8 +5,13 @@ gatherUsageStats = false
 headless = true
 
 [theme]
-base = "light"
-primaryColor = "#0b7285"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f5f7f8"
-textColor = "#17202a"
+base = "dark"
+primaryColor = "#3BD7FF"
+backgroundColor = "#070812"
+secondaryBackgroundColor = "#131525"
+textColor = "#F7F8FF"
+font = "sans-serif"
+baseRadius = "large"
+showWidgetBorder = true
+showSidebarBorder = true
+chartCategoricalColors = ["#3BD7FF", "#E22DFF", "#FF4F70", "#FF7448", "#72F6C7"]

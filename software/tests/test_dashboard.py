@@ -12,6 +12,8 @@ from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.tariffs import estimate_cycle_charge, load_tariff_catalog
 
 DASHBOARD_PATH = Path(__file__).parents[1] / "dashboard" / "app.py"
+STYLES_PATH = Path(__file__).parents[1] / "dashboard" / "styles.css"
+STREAMLIT_CONFIG_PATH = Path(__file__).parents[1] / ".streamlit" / "config.toml"
 CATALOG_PATH = (
     Path(__file__).parents[1] / "config" / "tariffs" / "tnb-domestic-general-rp4.json"
 )
@@ -140,3 +142,16 @@ def test_volume_label_save_from_cycles_mode_is_persisted(
     cycle_id = str(store.fetch_cycles()[0]["cycle_id"])
     assert store.fetch_effective_volume(cycle_id).value == "1.0_l"
     assert app.success[0].value == "Volume label saved"
+
+
+def test_neon_theme_is_local_responsive_and_motion_safe() -> None:
+    css = STYLES_PATH.read_text(encoding="utf-8")
+    config = STREAMLIT_CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "--cyan: #3bd7ff" in css
+    assert ".state-heating" in css
+    assert ":focus-visible" in css
+    assert "prefers-reduced-motion: reduce" in css
+    assert "url(" not in css.lower()
+    assert 'base = "dark"' in config
+    assert 'primaryColor = "#3BD7FF"' in config

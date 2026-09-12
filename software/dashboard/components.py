@@ -19,7 +19,8 @@ def render_command_bar(connection: ConnectionState, updated_at: datetime | None)
         else updated_at.strftime("%d %b, %H:%M:%S UTC")
     )
     return (
-        f'<div class="command-bar"><span class="connection connection-{connection.value}">'
+        f'<div class="command-bar" role="status" aria-live="polite">'
+        f'<span class="connection connection-{connection.value}">'
         f"● {connection.value.title()}</span><span>Last reading: {updated}</span></div>"
     )
 
@@ -47,7 +48,7 @@ def render_live_state(view: LiveView) -> None:
     }
     title, caption, css_class = state_labels[view.state]
     st.markdown(
-        f'<section class="state-panel {css_class}"><p class="eyebrow">LIVE STATE</p>'
+        f'<section class="state-panel {css_class}" role="status" aria-live="polite">'
         f'<h2>{title}</h2><p>{caption}</p></section>',
         unsafe_allow_html=True,
     )

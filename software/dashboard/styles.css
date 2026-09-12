@@ -1,60 +1,249 @@
 :root {
-  --monitor-ink: #17202a;
-  --monitor-muted: #5d6875;
-  --monitor-line: #dbe1e7;
-  --monitor-accent: #0b7285;
-  --monitor-surface: #f5f7f8;
+  --canvas: #070812;
+  --surface: rgba(19, 21, 37, 0.82);
+  --surface-strong: rgba(24, 27, 48, 0.94);
+  --ink: #f7f8ff;
+  --muted: #aeb5cb;
+  --line: rgba(184, 196, 255, 0.18);
+  --cyan: #3bd7ff;
+  --violet: #7b4dff;
+  --pink: #e22dff;
+  --coral: #ff4f70;
+  --orange: #ff7448;
+  --mint: #72f6c7;
+  --warning: #ffc857;
+  --danger: #ff5f6d;
 }
 
-.stApp {
-  color: var(--monitor-ink);
+.stApp,
+[data-testid="stAppViewContainer"] {
+  color: var(--ink);
 }
 
-[data-testid="stAppViewContainer"] > .main {
-  background: #ffffff;
+[data-testid="stAppViewContainer"] {
+  background:
+    radial-gradient(ellipse 70% 35% at -10% 20%, rgba(59, 215, 255, 0.32), transparent 68%),
+    radial-gradient(ellipse 55% 28% at 108% 12%, rgba(226, 45, 255, 0.34), transparent 70%),
+    radial-gradient(ellipse 75% 34% at 85% 108%, rgba(255, 79, 112, 0.28), transparent 72%),
+    linear-gradient(145deg, #05060c 0%, #090a18 48%, #070812 100%);
+  color: var(--ink);
+}
+
+[data-testid="stAppViewContainer"]::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from 205deg at 42% 55%,
+    transparent 0 18%,
+    rgba(59, 215, 255, 0.24) 24%,
+    rgba(123, 77, 255, 0.30) 31%,
+    rgba(226, 45, 255, 0.32) 38%,
+    rgba(255, 116, 72, 0.28) 45%,
+    transparent 53% 100%
+  );
+  filter: blur(52px) saturate(125%);
+  opacity: 0.78;
+}
+
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stHeader"] {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.block-container {
+  max-width: 1180px;
+  padding-top: 2.25rem;
+  padding-bottom: 3rem;
+}
+
+h1,
+h2,
+h3,
+[data-testid="stMetricValue"] {
+  color: var(--ink);
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  font-size: clamp(2.15rem, 5vw, 4.35rem);
+  line-height: 0.98;
+  max-width: 13ch;
+  text-shadow: 0 0 32px rgba(59, 215, 255, 0.18);
+}
+
+p,
+[data-testid="stCaptionContainer"],
+[data-testid="stMetricLabel"] {
+  color: var(--muted);
+}
+
+.command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0 1.25rem;
+  padding: 0.85rem 1rem;
+  color: var(--muted);
+  background: rgba(9, 11, 24, 0.74);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.connection {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.connection-online {
+  color: var(--mint);
+}
+
+.connection-stale {
+  color: var(--warning);
+}
+
+.connection-offline {
+  color: var(--danger);
+}
+
+.cycle-card,
+.state-panel,
+.cycle-receipt,
+[data-testid="stMetric"] {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.state-panel,
+.cycle-receipt {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  margin: 0.35rem 0 1rem;
+}
+
+.state-panel::after,
+.cycle-receipt::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--cyan);
+  box-shadow: 0 0 24px currentColor;
+}
+
+.state-panel h2,
+.cycle-receipt h2 {
+  margin: 0.1rem 0 0.35rem;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+}
+
+.state-panel p,
+.cycle-receipt p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--cyan) !important;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.state-idle::after {
+  background: var(--cyan);
+}
+
+.state-heating::after {
+  background: linear-gradient(var(--pink), var(--orange));
+}
+
+.state-complete::after,
+.status-normal::after {
+  background: var(--mint);
+}
+
+.status-warning::after {
+  background: var(--warning);
+}
+
+.status-unusual::after {
+  background: var(--danger);
 }
 
 [data-testid="stMetric"] {
-  background: var(--monitor-surface);
-  border: 1px solid var(--monitor-line);
-  border-radius: 0.5rem;
-  padding: 0.9rem 1rem;
-}
-
-[data-testid="stMetricLabel"] {
-  color: var(--monitor-muted);
+  min-height: 7.25rem;
+  padding: 1rem 1.1rem;
 }
 
 [data-testid="stMetricValue"] {
-  color: var(--monitor-ink);
+  font-size: clamp(1.45rem, 3.2vw, 2.25rem);
 }
 
-.monitor-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0.15rem 0 1rem;
-  color: var(--monitor-muted);
-  font-size: 0.95rem;
+[data-testid="stDataFrame"],
+[data-testid="stPlotlyChart"],
+[data-testid="stExpander"] {
+  overflow: hidden;
+  background: rgba(10, 12, 26, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.22);
 }
 
-.monitor-status strong {
-  color: var(--monitor-ink);
-  text-transform: capitalize;
+[data-testid="stButton"] button,
+[data-testid="stBaseButton-segmented_controlActive"],
+[data-testid="stBaseButton-segmented_control"] {
+  min-height: 44px;
+  border-radius: 999px;
 }
 
-.monitor-dot {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 50%;
-  background: var(--monitor-accent);
+[data-testid="stBaseButton-primary"] {
+  color: #061019;
+  font-weight: 800;
+  background: linear-gradient(100deg, var(--cyan), var(--mint));
+  border: 0;
+  box-shadow: 0 0 30px rgba(59, 215, 255, 0.24);
+}
+
+[data-testid="stBaseButton-primary"]:hover {
+  color: #061019;
+  filter: brightness(1.08);
+}
+
+:where(button, [role="button"], input, select, textarea):focus-visible {
+  outline: 3px solid var(--cyan) !important;
+  outline-offset: 3px;
 }
 
 @media (max-width: 640px) {
   .block-container {
-    padding-left: 1rem;
-    padding-right: 1rem;
-    padding-top: 1.5rem;
+    padding: 1rem;
+  }
+
+  .state-panel,
+  .cycle-receipt {
+    border-radius: 1rem;
+  }
+
+  .command-bar {
+    align-items: stretch;
+    flex-direction: column;
+    border-radius: 1rem;
+  }
+
+  .primary-measurement {
+    font-size: clamp(2.25rem, 15vw, 4rem);
   }
 
   [data-testid="stMetric"] {
@@ -62,3 +251,13 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
