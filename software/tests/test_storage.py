@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from test_models import valid_reading
 
-from energy_monitor.models import TelemetryBatch
+from energy_monitor.models import CycleDetectionSettings, TelemetryBatch, VolumeClass
+from energy_monitor.simulator import batch_readings, generate_readings
 from energy_monitor.storage import IdempotencyConflict, SQLiteTelemetryStore
 
 
@@ -62,3 +65,66 @@ def test_store_returns_recent_readings_in_chart_order(tmp_path: Path) -> None:
 
     assert [row["sample_sequence"] for row in rows] == [10, 11]
     assert rows[-1]["active_power_w"] == 2058.0
+
+
+def store_with_completed_cycle(tmp_path: Path) -> tuple[SQLiteTelemetryStore, str]:
+    store = SQLiteTelemetryStore(tmp_path / "cycles.db")
+    readings = generate_readings(36, datetime(2026, 9, 12, tzinfo=UTC))
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    cycles = store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    return store, str(cycles[0].cycle_id)
+
+
+def test_processing_cycles_is_idempotent(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "cycles.db")
+    readings = generate_readings(36, datetime(2026, 9, 12, tzinfo=UTC))
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    settings = CycleDetectionSettings.simulation_defaults()
+
+    first = store.process_cycles(settings)
+    second = store.process_cycles(settings)
+
+    assert first == second
+    assert len(store.fetch_cycles()) == 1
+    assert store.fetch_cycles()[0]["status"] == "completed"
+
+
+def test_manual_volume_correction_preserves_audit_history(tmp_path: Path) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+
+    store.save_volume_label(cycle_id, VolumeClass.ONE_LITRE)
+    store.save_volume_label(cycle_id, VolumeClass.HALF_LITRE)
+
+    assert store.fetch_effective_volume(cycle_id) == VolumeClass.HALF_LITRE
+    history = store.fetch_volume_label_history(cycle_id)
+    assert [row["volume_class"] for row in history] == ["1.0_l", "0.5_l"]
+    assert [row["is_active"] for row in history] == [0, 1]
+
+
+def test_fetch_cycle_and_its_readings(tmp_path: Path) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+
+    cycle = store.fetch_cycle(cycle_id)
+    rows = store.fetch_cycle_readings(cycle_id)
+
+    assert cycle is not None
+    assert cycle["cycle_id"] == cycle_id
+    assert rows[0]["sample_sequence"] == cycle["start_sequence"]
+    assert rows[-1]["sample_sequence"] == cycle["end_sequence"]
+
+
+def test_volume_filter_uses_active_manual_label(tmp_path: Path) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+    store.save_volume_label(cycle_id, VolumeClass.ONE_LITRE)
+
+    assert len(store.fetch_cycles(volume="1.0_l")) == 1
+    assert store.fetch_cycles(volume="0.5_l") == []
+
+
+def test_volume_label_requires_an_existing_cycle(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "cycles.db")
+
+    with pytest.raises(ValueError, match="cycle does not exist"):
+        store.save_volume_label(uuid4(), VolumeClass.ONE_LITRE)
