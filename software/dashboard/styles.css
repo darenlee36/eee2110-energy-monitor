@@ -202,6 +202,7 @@ p,
 }
 
 [data-testid="stButton"] button,
+[data-testid="stPills"] button,
 [data-testid="stBaseButton-segmented_controlActive"],
 [data-testid="stBaseButton-segmented_control"] {
   min-height: 44px;
@@ -214,6 +215,11 @@ p,
   background: linear-gradient(100deg, var(--cyan), var(--mint));
   border: 0;
   box-shadow: 0 0 30px rgba(59, 215, 255, 0.24);
+}
+
+[data-testid="stBaseButton-primary"] p,
+button[kind="primary"] p {
+  color: #061019 !important;
 }
 
 [data-testid="stBaseButton-primary"]:hover {
