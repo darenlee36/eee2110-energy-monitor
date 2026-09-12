@@ -4,6 +4,7 @@ import argparse
 import random
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import uuid4
 
 import httpx
@@ -12,6 +13,72 @@ from energy_monitor.models import TelemetryBatch, TelemetryReading
 
 SAMPLE_INTERVAL_SECONDS = 5
 UPLOAD_BATCH_SIZE = 6
+ScenarioName = Literal["normal", "incomplete_gap", "short_spike"]
+
+
+def _scenario_from_powers(
+    powers: list[float],
+    elapsed_seconds: list[int],
+    start_at: datetime,
+    starting_energy_kwh: float = 0.125,
+) -> list[TelemetryReading]:
+    if start_at.tzinfo is None or start_at.utcoffset() is None:
+        raise ValueError("start_at must include a timezone")
+    energy_kwh = starting_energy_kwh
+    readings: list[TelemetryReading] = []
+    previous_seconds = 0
+    for index, (power_w, seconds) in enumerate(
+        zip(powers, elapsed_seconds, strict=True),
+        start=1,
+    ):
+        interval = 5 if index == 1 else seconds - previous_seconds
+        energy_kwh += power_w * interval / 3_600_000
+        previous_seconds = seconds
+        heating = power_w > 0
+        readings.append(
+            TelemetryReading.model_validate(
+                {
+                    "device_id": "monitor-001",
+                    "profile_id": "tefal-kettle",
+                    "timestamp": start_at.astimezone(UTC) + timedelta(seconds=seconds),
+                    "sample_sequence": index,
+                    "device_uptime_ms": seconds * 1000,
+                    "voltage_v": 240.0,
+                    "current_a": round(power_w / 240.0, 3),
+                    "active_power_w": power_w,
+                    "cumulative_energy_kwh": round(energy_kwh, 6),
+                    "frequency_hz": 50.0,
+                    "power_factor": 0.998 if heating else 0.0,
+                    "appliance_state": "heating" if heating else "off",
+                    "battery_voltage_v": 4.0,
+                    "connection_state": "online",
+                    "anomaly_status": "normal" if heating else "not_evaluated",
+                    "quality_status": "valid",
+                    "firmware_version": "sim-cycle-0.1.0",
+                }
+            )
+        )
+    return readings
+
+
+def generate_cycle_scenario(
+    name: ScenarioName,
+    start_at: datetime,
+) -> list[TelemetryReading]:
+    """Return deterministic idle/heating/idle telemetry at five-second intervals."""
+    if name == "normal":
+        powers = [0.0] * 3 + [2050.0] * 30 + [0.0] * 3
+        elapsed = [index * SAMPLE_INTERVAL_SECONDS for index in range(len(powers))]
+    elif name == "incomplete_gap":
+        powers = [0.0] * 3 + [2050.0] * 12 + [0.0] * 3
+        elapsed = [index * SAMPLE_INTERVAL_SECONDS for index in range(15)]
+        elapsed.extend([135, 140, 145])
+    elif name == "short_spike":
+        powers = [0.0] * 3 + [2050.0] + [0.0] * 4
+        elapsed = [index * SAMPLE_INTERVAL_SECONDS for index in range(len(powers))]
+    else:
+        raise ValueError(f"unsupported scenario: {name}")
+    return _scenario_from_powers(powers, elapsed, start_at)
 
 
 def generate_readings(
@@ -111,10 +178,22 @@ def main() -> None:
     )
     parser.add_argument("--count", type=int, default=80)
     parser.add_argument("--seed", type=int, default=2110)
+    parser.add_argument(
+        "--scenario",
+        choices=("normal", "incomplete_gap", "short_spike", "stream"),
+        default="normal",
+    )
     args = parser.parse_args()
 
-    start_at = datetime.now(UTC) - timedelta(seconds=(args.count - 1) * 5)
-    batches = batch_readings(generate_readings(args.count, start_at, args.seed))
+    if args.scenario == "stream":
+        start_at = datetime.now(UTC) - timedelta(seconds=(args.count - 1) * 5)
+        readings = generate_readings(args.count, start_at, args.seed)
+    else:
+        scenario_lengths = {"normal": 36, "incomplete_gap": 18, "short_spike": 8}
+        count = scenario_lengths[args.scenario]
+        start_at = datetime.now(UTC) - timedelta(seconds=(count - 1) * 5)
+        readings = generate_cycle_scenario(args.scenario, start_at)
+    batches = batch_readings(readings)
     accepted, duplicates = upload_batches(args.url, batches)
     print(
         f"Uploaded {len(batches)} batches: {accepted} accepted readings, "

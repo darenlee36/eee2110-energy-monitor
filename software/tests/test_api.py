@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -8,6 +9,7 @@ from test_models import valid_reading
 
 from energy_monitor.api import create_server
 from energy_monitor.models import TelemetryBatch
+from energy_monitor.simulator import batch_readings, generate_cycle_scenario
 from energy_monitor.storage import SQLiteTelemetryStore
 
 
@@ -22,6 +24,10 @@ def make_payload(batch_id: str, start_sequence: int = 1) -> dict[str, object]:
 
 def start_test_server(tmp_path: Path) -> tuple[object, str]:
     store = SQLiteTelemetryStore(tmp_path / "api.db")
+    return start_test_server_with_store(store)
+
+
+def start_test_server_with_store(store: SQLiteTelemetryStore) -> tuple[object, str]:
     server = create_server(store, host="127.0.0.1", port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -122,3 +128,69 @@ def test_payload_fixture_remains_valid() -> None:
         make_payload("99999999-9999-4999-8999-999999999999")
     )
     assert len(batch.readings) == 2
+
+
+def test_api_processes_one_cycle_spanning_multiple_batches(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "cycle-api.db")
+    server, base_url = start_test_server_with_store(store)
+    readings = generate_cycle_scenario(
+        "normal", datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+    )
+    try:
+        for batch in batch_readings(readings):
+            response = httpx.post(
+                f"{base_url}/api/v1/telemetry/batches",
+                headers={"Idempotency-Key": str(batch.batch_id)},
+                json=batch.model_dump(mode="json"),
+            )
+            assert response.status_code == 201
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    cycles = store.fetch_cycles()
+    assert len(cycles) == 1
+    assert cycles[0]["status"] == "completed"
+
+
+def test_api_replay_keeps_one_cycle(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "replay-api.db")
+    server, base_url = start_test_server_with_store(store)
+    batches = batch_readings(
+        generate_cycle_scenario("normal", datetime(2026, 9, 12, 6, 0, tzinfo=UTC))
+    )
+    try:
+        for batch in batches:
+            for _ in range(2):
+                response = httpx.post(
+                    f"{base_url}/api/v1/telemetry/batches",
+                    headers={"Idempotency-Key": str(batch.batch_id)},
+                    json=batch.model_dump(mode="json"),
+                )
+                assert response.status_code in {200, 201}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert len(store.fetch_cycles()) == 1
+
+
+def test_api_stores_incomplete_gap_cycle(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "gap-api.db")
+    server, base_url = start_test_server_with_store(store)
+    readings = generate_cycle_scenario(
+        "incomplete_gap", datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+    )
+    try:
+        for batch in batch_readings(readings):
+            response = httpx.post(
+                f"{base_url}/api/v1/telemetry/batches",
+                headers={"Idempotency-Key": str(batch.batch_id)},
+                json=batch.model_dump(mode="json"),
+            )
+            assert response.status_code == 201
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert store.fetch_cycles()[0]["status"] == "incomplete"

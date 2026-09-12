@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from energy_monitor.models import TelemetryBatch
+from energy_monitor.models import CycleDetectionSettings, TelemetryBatch
 from energy_monitor.storage import IdempotencyConflict, SQLiteTelemetryStore
 
 
@@ -97,6 +97,9 @@ def create_server(
                     ),
                 )
                 return
+
+            if not result.replayed:
+                store.process_cycles(CycleDetectionSettings.simulation_defaults())
 
             status = HTTPStatus.OK if result.replayed else HTTPStatus.CREATED
             self._send_json(status, {"data": result.model_dump(mode="json")})

@@ -1,6 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
-from energy_monitor.simulator import batch_readings, generate_readings
+from energy_monitor.simulator import (
+    batch_readings,
+    generate_cycle_scenario,
+    generate_readings,
+)
 
 
 def test_simulator_emits_five_second_samples_with_monotonic_energy() -> None:
@@ -42,4 +46,32 @@ def test_simulator_marks_only_extended_heating_samples_as_synthetic_anomaly() ->
 
     assert anomaly_readings
     assert all(reading.appliance_state == "heating" for reading in anomaly_readings)
+
+
+def test_normal_cycle_scenario_has_approved_shape() -> None:
+    readings = generate_cycle_scenario(
+        "normal", datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+    )
+
+    assert len(readings) == 36
+    assert [item.active_power_w for item in readings[:3]] == [0.0] * 3
+    assert [item.active_power_w for item in readings[3:33]] == [2050.0] * 30
+    assert [item.active_power_w for item in readings[33:]] == [0.0] * 3
+
+
+def test_incomplete_gap_scenario_has_65_second_gap() -> None:
+    readings = generate_cycle_scenario(
+        "incomplete_gap", datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+    )
+
+    assert len(readings) == 18
+    assert (readings[15].timestamp - readings[14].timestamp).total_seconds() == 65
+
+
+def test_short_spike_scenario_has_only_one_heating_reading() -> None:
+    readings = generate_cycle_scenario(
+        "short_spike", datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+    )
+
+    assert len([item for item in readings if item.active_power_w > 1000]) == 1
 
