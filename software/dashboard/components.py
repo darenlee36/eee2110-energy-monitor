@@ -152,35 +152,135 @@ def build_cycle_figure(detail: CycleDetail, start_threshold_w: float) -> go.Figu
         (reading.timestamp - detail.summary.started_at).total_seconds()
         for reading in detail.readings
     ]
+    power = [reading.active_power_w for reading in detail.readings]
+    energy_so_far = [0.0]
+    for previous, current in zip(detail.readings, detail.readings[1:], strict=False):
+        energy_so_far.append(
+            energy_so_far[-1]
+            + max(0.0, current.cumulative_energy_kwh - previous.cumulative_energy_kwh)
+        )
+    custom_hover = [
+        [reading.voltage_v, reading.current_a, energy]
+        for reading, energy in zip(detail.readings, energy_so_far, strict=True)
+    ]
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=elapsed,
-            y=[reading.active_power_w for reading in detail.readings],
+            y=power,
             mode="lines",
             name="Selected cycle",
+            line={"color": "#3BD7FF", "width": 3},
+            fill="tozeroy",
+            fillcolor="rgba(226, 45, 255, 0.12)",
+            customdata=custom_hover,
+            hovertemplate=(
+                "%{x:.0f} s<br>%{y:,.0f} W<br>Voltage %{customdata[0]:.1f} V"
+                "<br>Current %{customdata[1]:.2f} A"
+                "<br>Cycle energy %{customdata[2]:.5f} kWh<extra></extra>"
+            ),
         )
     )
-    figure.add_hline(
-        y=start_threshold_w,
-        line_dash="dash",
-        line_color="#E22DFF",
-        annotation_text="Detection threshold",
+    figure.add_trace(
+        go.Scatter(
+            x=[min(elapsed, default=0), max(elapsed, default=0)],
+            y=[start_threshold_w, start_threshold_w],
+            mode="lines",
+            name="Detection threshold",
+            line={"color": "#E22DFF", "width": 2, "dash": "dash"},
+            hovertemplate="Start threshold %{y:,.0f} W<extra></extra>",
+        )
+    )
+    if elapsed:
+        figure.add_trace(
+            go.Scatter(
+                x=[elapsed[0], elapsed[-1]],
+                y=[power[0], power[-1]],
+                mode="markers",
+                name="Cycle boundaries",
+                marker={"color": "#72F6C7", "size": 11, "symbol": "circle-open"},
+                hovertemplate="Boundary at %{x:.0f} s<extra></extra>",
+            )
+        )
+    invalid = [
+        (second, watts)
+        for second, watts, reading in zip(elapsed, power, detail.readings, strict=True)
+        if reading.quality_status.value != "valid"
+    ]
+    figure.add_trace(
+        go.Scatter(
+            x=[item[0] for item in invalid],
+            y=[item[1] for item in invalid],
+            mode="markers",
+            name="Invalid/missing sample",
+            marker={"color": "#FF5F6D", "size": 11, "symbol": "diamond"},
+            hovertemplate="Invalid reading at %{x:.0f} s<extra></extra>",
+        )
     )
     figure.update_layout(
         xaxis_title="Elapsed time (s)",
         yaxis_title="Active power (W)",
         hovermode="x unified",
         height=380,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(7,8,18,0.72)",
+        font={"color": "#F7F8FF"},
+        margin={"l": 20, "r": 20, "t": 30, "b": 20},
+        xaxis={"gridcolor": "rgba(184,196,255,0.12)"},
+        yaxis={"gridcolor": "rgba(184,196,255,0.12)", "rangemode": "tozero"},
+        legend={"orientation": "h", "y": 1.12},
     )
     return figure
 
 
+def tariff_disclosure_text(estimate: TariffEstimate) -> str:
+    month = estimate.occurred_at.strftime("%B %Y")
+    amounts = "Unavailable"
+    if estimate.amount_rm is not None:
+        amounts = f"RM {estimate.amount_rm:.4f}"
+    elif estimate.amount_range_rm is not None:
+        low, high = estimate.amount_range_rm
+        amounts = f"RM {low:.4f} to RM {high:.4f}"
+    afa_rate = (
+        estimate.afa_rate_sen_per_kwh
+        if estimate.afa_rate_sen_per_kwh is not None
+        else "eligibility unresolved"
+    )
+    rate_lines = (
+        f"Energy rate: {estimate.energy_rate_sen_per_kwh or 'tier unresolved'} sen/kWh; "
+        f"capacity: {estimate.capacity_rate_sen_per_kwh or 'unavailable'} sen/kWh; "
+        f"network: {estimate.network_rate_sen_per_kwh or 'unavailable'} sen/kWh; "
+        f"AFA: {afa_rate} sen/kWh."
+    )
+    afa_name = f"{month} AFA" if estimate.afa_period else "AFA unavailable"
+    unresolved = ", ".join(item.replace("_", "-") for item in estimate.unresolved_components)
+    component_names = {
+        "energy_efficiency_incentive": "energy-efficiency incentive",
+        "retail_charge": "retail charge",
+        "renewable_energy_fund": "renewable-energy fund",
+        "complete_bill_rounding": "complete-bill rounding",
+    }
+    exclusions = ", ".join(
+        component_names.get(item, item.replace("_", " "))
+        for item in estimate.excluded_components
+    )
+    sources = "\n".join(f"- Source: {url}" for url in estimate.source_urls)
+    return (
+        f"**{estimate.provider} {estimate.scheme}**  \n"
+        f"Tariff version: {estimate.tariff_version or 'unavailable'}; effective "
+        f"{estimate.tariff_effective_from or 'unknown'} to "
+        f"{estimate.tariff_effective_to or 'unknown'}.  \n"
+        f"{afa_name}. Measured cycle energy: {estimate.energy_kwh} kWh.  \n"
+        f"{rate_lines}  \nEstimated gross variable cycle charge: {amounts}.  \n"
+        f"Unresolved: {unresolved or 'none'}.  \nExcluded: {exclusions or 'none'}.  \n"
+        f"Last checked: {estimate.last_checked_date or 'unavailable'}.  \n"
+        f"{sources}  \n**This is not a complete household bill.**"
+    )
+
+
 def render_tariff_disclosure(estimate: TariffEstimate) -> None:
     with st.expander("How this estimate was calculated"):
-        st.write(f"{estimate.provider} {estimate.scheme} · {estimate.tariff_version}")
-        st.write(f"Measured cycle energy: {estimate.energy_kwh} kWh")
-        st.write("This is not a complete household bill.")
+        st.markdown(tariff_disclosure_text(estimate))
 
 
 def render_volume_label(
@@ -201,9 +301,23 @@ def render_volume_label(
         default=display_volume(current),
         key=f"volume_label_{cycle_id}",
     )
+    selected_volume = options.get(str(selected), current)
+    error_key = f"volume_save_error_{cycle_id}"
+
+    def save_selected() -> None:
+        try:
+            store.save_volume_label(cycle_id, selected_volume)
+            st.session_state[error_key] = False
+            st.success("Volume label saved")
+        except Exception:
+            st.session_state[error_key] = True
+            st.error("Label was not saved")
+
     save, skip = st.columns(2)
     if save.button("Save label", key=f"save_volume_{cycle_id}", type="primary"):
-        store.save_volume_label(cycle_id, options[str(selected)])
-        st.success("Volume label saved")
+        save_selected()
     if skip.button("Skip", key=f"skip_volume_{cycle_id}"):
         st.caption("You can label this cycle later.")
+    if st.session_state.get(error_key, False):
+        if st.button("Retry save", key=f"retry_volume_{cycle_id}"):
+            save_selected()

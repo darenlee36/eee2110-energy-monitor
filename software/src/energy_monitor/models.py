@@ -209,7 +209,10 @@ class TariffEstimate(BaseModel):
     provider: str
     scheme: str
     tariff_version: str | None
+    tariff_effective_from: str | None
+    tariff_effective_to: str | None
     afa_version: str | None
+    afa_period: str | None
     occurred_at: datetime
     energy_kwh: Decimal = Field(ge=0)
     monthly_household_kwh: Decimal | None = Field(default=None, ge=0)
