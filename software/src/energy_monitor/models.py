@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
@@ -50,6 +51,12 @@ class VolumeClass(StrEnum):
     ONE_LITRE = "1.0_l"
     ONE_AND_HALF_LITRES = "1.5_l"
     UNKNOWN = "unknown"
+
+
+class TariffEstimateStatus(StrEnum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
 
 
 class CycleDetectionSettings(BaseModel):
@@ -193,4 +200,36 @@ class CycleSummary(BaseModel):
         if self.valid_sample_count + self.invalid_sample_count != self.sample_count:
             raise ValueError("valid and invalid sample counts must equal sample_count")
         return self
+
+
+class TariffEstimate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: TariffEstimateStatus
+    provider: str
+    scheme: str
+    tariff_version: str | None
+    afa_version: str | None
+    occurred_at: datetime
+    energy_kwh: Decimal = Field(ge=0)
+    monthly_household_kwh: Decimal | None = Field(default=None, ge=0)
+    energy_rate_sen_per_kwh: Decimal | None = Field(default=None, ge=0)
+    capacity_rate_sen_per_kwh: Decimal | None = Field(default=None, ge=0)
+    network_rate_sen_per_kwh: Decimal | None = Field(default=None, ge=0)
+    afa_rate_sen_per_kwh: Decimal | None = None
+    gross_variable_rate_sen_per_kwh: Decimal | None = Field(default=None, ge=0)
+    amount_rm: Decimal | None = Field(default=None, ge=0)
+    amount_range_rm: tuple[Decimal, Decimal] | None = None
+    included_components: tuple[str, ...]
+    excluded_components: tuple[str, ...]
+    unresolved_components: tuple[str, ...]
+    source_urls: tuple[str, ...]
+    last_checked_date: str | None
+
+    @field_validator("occurred_at")
+    @classmethod
+    def tariff_timestamp_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value.astimezone(UTC)
 

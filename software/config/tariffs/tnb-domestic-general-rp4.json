@@ -1,0 +1,31 @@
+{
+  "provider": "TNB",
+  "scheme": "Domestic General",
+  "currency": "MYR",
+  "tariff_versions": [
+    {
+      "version": "tnb-domestic-general-rp4-2025-07",
+      "effective_from": "2025-07-01",
+      "effective_to": "2027-12-31",
+      "energy_rate_up_to_1500_sen_per_kwh": "27.03",
+      "energy_rate_above_1500_sen_per_kwh": "37.03",
+      "capacity_rate_sen_per_kwh": "4.55",
+      "network_rate_sen_per_kwh": "12.85",
+      "retail_charge_rm_per_month": "10.00",
+      "retail_waiver_max_monthly_kwh": "600",
+      "source_url": "https://myenergystats.st.gov.my/documents/d/guest/tariff-tnb-pdf-1",
+      "source_published_date": "2025-06-20",
+      "last_checked_date": "2026-09-12"
+    }
+  ],
+  "afa_periods": [
+    {
+      "version": "tnb-afa-2026-09",
+      "month": "2026-09",
+      "rate_sen_per_kwh": "3.67",
+      "exempt_max_monthly_kwh": "600",
+      "source_url": "https://www.singlebuyer.com.my/Generation-Info-Tariff/automatic-fuel-adjustment-(afa)",
+      "last_checked_date": "2026-09-12"
+    }
+  ]
+}
