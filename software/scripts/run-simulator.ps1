@@ -1,17 +1,12 @@
-param(
-    [ValidateRange(1, 10000)]
-    [int]$Readings = 72
-)
-
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $projectRoot ".venv\Scripts\python.exe"
-$arguments = @(
-    "-m", "energy_monitor.simulator",
-    "--url", "http://127.0.0.1:8000/api/v1/telemetry/batches",
-    "--count", $Readings
-)
+
+if (-not (Test-Path -LiteralPath $python)) {
+    throw "Python environment not found. Run: py -m venv .venv; .\.venv\Scripts\pip install -e '.[dev]'"
+}
 
 Set-Location -LiteralPath $projectRoot
-& $python @arguments
+& $python -m energy_monitor.simulator --scenario normal @args
+exit $LASTEXITCODE
