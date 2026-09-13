@@ -1,4 +1,6 @@
 :root {
+  --font-interface: Inter, "Segoe UI Variable Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-technical: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --canvas: #070812;
   --surface: rgba(19, 21, 37, 0.82);
   --surface-strong: rgba(24, 27, 48, 0.94);
@@ -18,6 +20,14 @@
 .stApp,
 [data-testid="stAppViewContainer"] {
   color: var(--ink);
+  font-family: var(--font-interface);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-interface);
 }
 
 [data-testid="stAppViewContainer"] {
@@ -61,18 +71,19 @@
   padding-bottom: 3rem;
 }
 
-h1,
-h2,
-h3,
-[data-testid="stMetricValue"] {
+[data-testid="stAppViewContainer"] h1,
+[data-testid="stAppViewContainer"] h2,
+[data-testid="stAppViewContainer"] h3,
+[data-testid="stAppViewContainer"] [data-testid="stMetricValue"] {
   color: var(--ink);
+  font-family: var(--font-technical) !important;
   letter-spacing: -0.025em;
 }
 
 h1 {
   font-size: clamp(2.15rem, 5vw, 4.35rem);
   line-height: 0.98;
-  max-width: 13ch;
+  max-width: none;
   text-shadow: 0 0 32px rgba(59, 215, 255, 0.18);
 }
 
@@ -99,6 +110,7 @@ p,
 
 .connection {
   color: var(--ink);
+  font-family: var(--font-technical);
   font-weight: 700;
 }
 
@@ -156,6 +168,7 @@ p,
 
 .eyebrow {
   color: var(--cyan) !important;
+  font-family: var(--font-technical);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.16em;

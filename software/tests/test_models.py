@@ -68,6 +68,16 @@ def test_valid_reading_normalizes_timestamp_to_utc() -> None:
     assert reading.timestamp == datetime(2026, 9, 12, 4, 0, tzinfo=UTC)
 
 
+def test_battery_voltage_is_optional_for_usb_powered_devices() -> None:
+    missing = valid_reading()
+    missing.pop("battery_voltage_v")
+
+    assert TelemetryReading.model_validate(missing).battery_voltage_v is None
+    assert TelemetryReading.model_validate(
+        valid_reading(battery_voltage_v=None)
+    ).battery_voltage_v is None
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

@@ -8,6 +8,7 @@ import httpx
 from test_models import valid_reading
 
 from energy_monitor.api import create_server
+from energy_monitor.dashboard_queries import get_live_view
 from energy_monitor.models import TelemetryBatch
 from energy_monitor.simulator import batch_readings, generate_cycle_scenario
 from energy_monitor.storage import SQLiteTelemetryStore
@@ -130,7 +131,7 @@ def test_payload_fixture_remains_valid() -> None:
     assert len(batch.readings) == 2
 
 
-def test_api_processes_one_cycle_spanning_multiple_batches(tmp_path: Path) -> None:
+def test_simulated_esp32_batches_reach_dashboard_cycle_view(tmp_path: Path) -> None:
     store = SQLiteTelemetryStore(tmp_path / "cycle-api.db")
     server, base_url = start_test_server_with_store(store)
     readings = generate_cycle_scenario(
@@ -151,6 +152,10 @@ def test_api_processes_one_cycle_spanning_multiple_batches(tmp_path: Path) -> No
     cycles = store.fetch_cycles()
     assert len(cycles) == 1
     assert cycles[0]["status"] == "completed"
+    view = get_live_view(store, now=readings[-1].timestamp)
+    assert view.last_cycle is not None
+    assert view.last_cycle.energy_kwh == cycles[0]["meter_energy_kwh"]
+    assert view.latest_voltage_v == readings[-1].voltage_v
 
 
 def test_api_replay_keeps_one_cycle(tmp_path: Path) -> None:

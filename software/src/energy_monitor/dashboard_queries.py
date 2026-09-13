@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from statistics import median
@@ -34,11 +34,14 @@ class CycleListItem(BaseModel):
 
     cycle_id: UUID
     started_at: datetime
+    ended_at: datetime | None
     duration_seconds: int
     energy_kwh: float
     energy_label: str = "Measured cycle energy"
     charge_text: str
     effective_volume: VolumeClass
+    cycle_label: str | None = None
+    record_source: Literal["measured", "manual"]
     assessment: CycleAssessment
     status: CycleStatus
 
@@ -56,6 +59,8 @@ class LiveView(BaseModel):
     energy_so_far_kwh: float | None
     charge_so_far: TariffEstimate | None
     quality_note: str
+    recent_readings: list[TelemetryReading]
+    cycle_readings: list[TelemetryReading]
     active_cycle: CycleSummary | None
     last_cycle: CycleListItem | None
 
@@ -68,6 +73,9 @@ class CycleDetail(BaseModel):
     tariff_estimate: TariffEstimate
     effective_volume: VolumeClass
     manual_volume: VolumeClass | None
+    cycle_label: str | None
+    record_source: Literal["measured", "manual"]
+    manual_notes: str | None
     comparison_text: str
     chart_summary: str
 
@@ -84,17 +92,18 @@ def display_volume(volume: VolumeClass) -> str:
 def comparison_text(
     selected_seconds: int,
     peer_seconds: Sequence[int],
-    volume: VolumeClass,
+    label: VolumeClass | str | None,
 ) -> str:
-    if volume is VolumeClass.UNKNOWN or len(peer_seconds) < 3:
+    if label is None or label is VolumeClass.UNKNOWN or len(peer_seconds) < 3:
         return "Not enough similar labelled cycles for comparison"
+    display_label = display_volume(label) if isinstance(label, VolumeClass) else label
     difference = selected_seconds - round(median(peer_seconds))
     if difference == 0:
-        return f"Matches the median of your valid {display_volume(volume)} cycles"
+        return f"Matches the median of your valid {display_label} cycles"
     direction = "longer" if difference > 0 else "shorter"
     return (
         f"{abs(difference)} s {direction} than the median of your valid "
-        f"{display_volume(volume)} cycles"
+        f"{display_label} cycles"
     )
 
 
@@ -126,7 +135,7 @@ def _charge_text(estimate: TariffEstimate) -> str:
         return f"RM {estimate.amount_rm:.4f}"
     if estimate.amount_range_rm is not None:
         low, high = estimate.amount_range_rm
-        return f"RM {low:.4f}–{high:.4f}"
+        return f"RM {low:.3f}–{high:.3f}"
     return "Unavailable"
 
 
@@ -144,10 +153,15 @@ def _cycle_item(
     return CycleListItem(
         cycle_id=summary.cycle_id,
         started_at=summary.started_at,
+        ended_at=summary.ended_at,
         duration_seconds=summary.duration_seconds,
         energy_kwh=summary.meter_energy_kwh,
         charge_text=_charge_text(estimate),
         effective_volume=VolumeClass(str(row["effective_volume"])),
+        cycle_label=(
+            None if row.get("custom_label") is None else str(row["custom_label"])
+        ),
+        record_source=str(row.get("record_source", "measured")),
         assessment=summary.assessment,
         status=summary.status,
     )
@@ -167,13 +181,24 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
             energy_so_far_kwh=None,
             charge_so_far=None,
             quality_note="No telemetry has been received",
+            recent_readings=[],
+            cycle_readings=[],
             active_cycle=None,
             last_cycle=None,
         )
 
-    latest = _reading_from_row(rows[-1])
+    readings = [_reading_from_row(row) for row in rows]
+    latest = readings[-1]
+    window_start = latest.timestamp - timedelta(minutes=5)
+    recent_readings = [
+        reading for reading in readings if reading.timestamp >= window_start
+    ]
     connection = ConnectionState(derive_connection_state(latest.timestamp, now))
-    cycle_rows = store.fetch_cycles(limit=100)
+    cycle_rows = [
+        row
+        for row in store.fetch_cycles(limit=100)
+        if row.get("record_source", "measured") == "measured"
+    ]
     active_row = next(
         (row for row in cycle_rows if row["status"] == CycleStatus.ACTIVE.value),
         None,
@@ -186,6 +211,15 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
     monthly_usage = _monthly_usage_from_env()
     last_cycle = (
         None if completed_row is None else _cycle_item(completed_row, monthly_usage)
+    )
+    chart_cycle_row = active_row or completed_row
+    cycle_readings = (
+        []
+        if chart_cycle_row is None
+        else [
+            _reading_from_row(item)
+            for item in store.fetch_cycle_readings(str(chart_cycle_row["cycle_id"]))
+        ]
     )
 
     if active is not None:
@@ -229,6 +263,8 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
         energy_so_far_kwh=energy_so_far,
         charge_so_far=charge_so_far,
         quality_note=quality_note,
+        recent_readings=recent_readings,
+        cycle_readings=cycle_readings,
         active_cycle=active,
         last_cycle=last_cycle,
     )
@@ -237,7 +273,7 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
 def list_cycle_items(
     store: SQLiteTelemetryStore,
     status_filter: str = "all",
-    volume_filter: str = "all",
+    label_filter: str = "all",
     limit: int = 100,
 ) -> list[CycleListItem]:
     rows = store.fetch_cycles(limit=10_000)
@@ -249,8 +285,10 @@ def list_cycle_items(
         rows = [row for row in rows if row["status"] == CycleStatus.INCOMPLETE.value]
     elif status_filter != "all":
         raise ValueError("unsupported status filter")
-    if volume_filter != "all":
-        rows = [row for row in rows if row["effective_volume"] == volume_filter]
+    if label_filter == "__unlabelled__":
+        rows = [row for row in rows if row.get("custom_label") is None]
+    elif label_filter != "all":
+        rows = [row for row in rows if row.get("custom_label") == label_filter]
     monthly_usage = _monthly_usage_from_env()
     return [_cycle_item(row, monthly_usage) for row in rows[:limit]]
 
@@ -273,12 +311,17 @@ def get_cycle_detail(
         if row.get("manual_volume") is None
         else VolumeClass(str(row["manual_volume"]))
     )
+    cycle_label = (
+        None if row.get("custom_label") is None else str(row["custom_label"])
+    )
     peers = [
         int(peer["duration_seconds"])
         for peer in store.fetch_cycles(status=CycleStatus.COMPLETED.value, limit=10_000)
         if peer["cycle_id"] != str(summary.cycle_id)
         and peer["assessment"] == CycleAssessment.NORMAL.value
-        and peer["effective_volume"] == effective_volume.value
+        and peer.get("record_source", "measured") == "measured"
+        and cycle_label is not None
+        and peer.get("custom_label") == cycle_label
     ]
     estimate = estimate_cycle_charge(
         Decimal(str(summary.meter_energy_kwh)),
@@ -286,9 +329,14 @@ def get_cycle_detail(
         tariff_context,
         load_tariff_catalog(CATALOG_PATH),
     )
+    record_source = str(row.get("record_source", "measured"))
     chart_summary = (
-        f"{len(readings)} readings from cycle start to cycle end; "
-        f"peak {summary.peak_power_w:.0f} W"
+        "Manual record; no raw telemetry available"
+        if record_source == "manual"
+        else (
+            f"{len(readings)} readings from cycle start to cycle end; "
+            f"peak {summary.peak_power_w:.0f} W"
+        )
     )
     return CycleDetail(
         summary=summary,
@@ -296,10 +344,15 @@ def get_cycle_detail(
         tariff_estimate=estimate,
         effective_volume=effective_volume,
         manual_volume=manual_volume,
+        cycle_label=cycle_label,
+        record_source=record_source,
+        manual_notes=(
+            None if row.get("manual_notes") is None else str(row["manual_notes"])
+        ),
         comparison_text=comparison_text(
             summary.duration_seconds,
             peers,
-            effective_volume,
+            cycle_label,
         ),
         chart_summary=chart_summary,
     )

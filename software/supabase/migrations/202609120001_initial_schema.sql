@@ -40,7 +40,7 @@ create table if not exists public.telemetry (
     frequency_hz double precision not null check (frequency_hz between 40 and 70),
     power_factor double precision not null check (power_factor between 0 and 1),
     appliance_state text not null check (appliance_state in ('off', 'heating', 'unknown')),
-    battery_voltage_v double precision not null check (battery_voltage_v between 2.5 and 4.5),
+    battery_voltage_v double precision check (battery_voltage_v between 2.5 and 4.5),
     connection_state text not null check (connection_state in ('online', 'stale', 'offline')),
     anomaly_status text not null
         check (anomaly_status in ('not_evaluated', 'normal', 'anomaly')),
@@ -98,6 +98,9 @@ create table if not exists public.appliance_cycles (
     integrated_energy_kwh numeric(12,6) not null check (integrated_energy_kwh >= 0),
     summary jsonb not null,
     detection_version text not null references public.cycle_detection_versions(version),
+    record_source text not null default 'measured'
+        check (record_source in ('measured', 'manual')),
+    manual_notes text check (char_length(manual_notes) <= 500),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint appliance_cycles_device_start_unique
@@ -119,6 +122,30 @@ create table if not exists public.cycle_volume_labels (
 
 create unique index if not exists one_active_volume_label_per_cycle
     on public.cycle_volume_labels(cycle_id)
+    where is_active;
+
+create table if not exists public.cycle_label_options (
+    id uuid primary key default gen_random_uuid(),
+    label text not null check (char_length(btrim(label)) between 1 and 40),
+    label_key text generated always as (lower(btrim(label))) stored unique,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now()
+);
+
+alter table public.cycle_label_options
+    add column if not exists is_active boolean not null default true;
+
+create table if not exists public.cycle_label_assignments (
+    id uuid primary key default gen_random_uuid(),
+    cycle_id uuid not null references public.appliance_cycles(cycle_id),
+    label_option_id uuid not null references public.cycle_label_options(id),
+    source text not null check (source = 'dashboard'),
+    is_active boolean not null default true,
+    created_at timestamptz not null default now()
+);
+
+create unique index if not exists one_active_custom_label_per_cycle
+    on public.cycle_label_assignments(cycle_id)
     where is_active;
 
 create table if not exists public.tariff_versions (
@@ -193,6 +220,8 @@ alter table public.telemetry enable row level security;
 alter table public.cycle_detection_versions enable row level security;
 alter table public.appliance_cycles enable row level security;
 alter table public.cycle_volume_labels enable row level security;
+alter table public.cycle_label_options enable row level security;
+alter table public.cycle_label_assignments enable row level security;
 alter table public.tariff_versions enable row level security;
 alter table public.afa_periods enable row level security;
 alter table public.cycle_cost_estimates enable row level security;
@@ -212,6 +241,12 @@ create policy "authenticated users may read appliance cycles"
 create policy "authenticated users may read cycle volume labels"
     on public.cycle_volume_labels for select to authenticated using (true);
 
+create policy "authenticated users may read cycle label options"
+    on public.cycle_label_options for select to authenticated using (true);
+
+create policy "authenticated users may read cycle label assignments"
+    on public.cycle_label_assignments for select to authenticated using (true);
+
 create policy "authenticated users may read tariff versions"
     on public.tariff_versions for select to authenticated using (true);
 
@@ -224,13 +259,16 @@ create policy "authenticated users may read cycle cost estimates"
 revoke all on public.ingestion_batches from anon, authenticated;
 revoke insert, update, delete on public.telemetry from anon, authenticated;
 revoke all on public.cycle_detection_versions, public.appliance_cycles,
-    public.cycle_volume_labels, public.tariff_versions, public.afa_periods,
+    public.cycle_volume_labels, public.cycle_label_options,
+    public.cycle_label_assignments, public.tariff_versions, public.afa_periods,
     public.cycle_cost_estimates from anon;
 revoke insert, update, delete on public.cycle_detection_versions, public.appliance_cycles,
-    public.cycle_volume_labels, public.tariff_versions, public.afa_periods,
+    public.cycle_volume_labels, public.cycle_label_options,
+    public.cycle_label_assignments, public.tariff_versions, public.afa_periods,
     public.cycle_cost_estimates from authenticated;
 grant select on public.appliance_profiles, public.telemetry,
     public.cycle_detection_versions, public.appliance_cycles,
-    public.cycle_volume_labels, public.tariff_versions, public.afa_periods,
+    public.cycle_volume_labels, public.cycle_label_options,
+    public.cycle_label_assignments, public.tariff_versions, public.afa_periods,
     public.cycle_cost_estimates to authenticated;
 

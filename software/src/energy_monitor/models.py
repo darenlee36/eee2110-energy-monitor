@@ -112,7 +112,7 @@ class TelemetryReading(BaseModel):
     frequency_hz: float = Field(ge=40, le=70)
     power_factor: float = Field(ge=0, le=1)
     appliance_state: ApplianceState
-    battery_voltage_v: float = Field(ge=2.5, le=4.5)
+    battery_voltage_v: float | None = Field(default=None, ge=2.5, le=4.5)
     connection_state: ConnectionState
     anomaly_status: AnomalyStatus
     quality_status: QualityStatus
@@ -200,6 +200,23 @@ class CycleSummary(BaseModel):
         if self.valid_sample_count + self.invalid_sample_count != self.sample_count:
             raise ValueError("valid and invalid sample counts must equal sample_count")
         return self
+
+
+class ManualCycleRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    started_at: datetime
+    duration_seconds: int = Field(ge=1, le=86_400)
+    energy_kwh: float = Field(gt=0, le=100)
+    label: str = Field(min_length=1, max_length=40)
+    notes: str = Field(default="", max_length=500)
+
+    @field_validator("started_at")
+    @classmethod
+    def start_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("manual cycle start time must include a timezone")
+        return value.astimezone(UTC)
 
 
 class TariffEstimate(BaseModel):

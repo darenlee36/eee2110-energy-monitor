@@ -24,6 +24,14 @@ def test_json_schema_accepts_the_reference_batch() -> None:
     validate(payload, load_schema(), format_checker=FormatChecker())
 
 
+def test_json_schema_allows_missing_battery_measurement() -> None:
+    payload = make_payload("abababab-abab-4bab-8bab-abababababab")
+    payload["readings"][0].pop("battery_voltage_v")
+    payload["readings"][1]["battery_voltage_v"] = None
+
+    validate(payload, load_schema(), format_checker=FormatChecker())
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -56,6 +64,8 @@ def test_supabase_migration_contains_cycle_first_tables_and_rls() -> None:
         "cycle_detection_versions",
         "appliance_cycles",
         "cycle_volume_labels",
+        "cycle_label_options",
+        "cycle_label_assignments",
         "tariff_versions",
         "afa_periods",
         "cycle_cost_estimates",
@@ -64,3 +74,4 @@ def test_supabase_migration_contains_cycle_first_tables_and_rls() -> None:
         assert f"alter table public.{table} enable row level security" in sql
     assert "unique (device_id, profile_id, start_sequence)" in sql
     assert "one_active_volume_label_per_cycle" in sql
+    assert "one_active_custom_label_per_cycle" in sql

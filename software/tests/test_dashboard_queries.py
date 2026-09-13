@@ -34,6 +34,9 @@ def test_live_view_distinguishes_instantaneous_values_from_cycle_totals(
     assert view.latest_power_w is not None and view.latest_power_w >= 0
     assert view.last_cycle is not None
     assert view.last_cycle.energy_label == "Measured cycle energy"
+    assert view.recent_readings
+    assert view.cycle_readings
+    assert view.recent_readings[-1].timestamp == view.updated_at
 
 
 def test_empty_live_view_is_explicit(tmp_path: Path) -> None:
@@ -45,6 +48,8 @@ def test_empty_live_view_is_explicit(tmp_path: Path) -> None:
     assert view.state == "empty"
     assert view.latest_power_w is None
     assert view.quality_note == "No telemetry has been received"
+    assert view.recent_readings == []
+    assert view.cycle_readings == []
 
 
 def test_cycle_detail_contains_only_cycle_readings_and_tariff_disclosure(
@@ -76,3 +81,17 @@ def test_cycle_list_filters_incomplete_cycles(tmp_path: Path) -> None:
 
     assert len(items) == 1
     assert items[0].status.value == "incomplete"
+
+
+def test_cycle_list_uses_user_managed_label_filter(tmp_path: Path) -> None:
+    store = populated_store(tmp_path)
+    cycle_id = str(store.fetch_cycles()[0]["cycle_id"])
+    store.add_cycle_label("Morning mug")
+    store.save_cycle_label(cycle_id, "Morning mug")
+
+    matching = list_cycle_items(store, label_filter="Morning mug")
+    unlabelled = list_cycle_items(store, label_filter="__unlabelled__")
+
+    assert len(matching) == 1
+    assert matching[0].cycle_label == "Morning mug"
+    assert unlabelled == []

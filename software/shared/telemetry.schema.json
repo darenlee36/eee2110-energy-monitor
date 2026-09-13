@@ -40,7 +40,6 @@
         "frequency_hz",
         "power_factor",
         "appliance_state",
-        "battery_voltage_v",
         "connection_state",
         "anomaly_status",
         "quality_status",
@@ -63,7 +62,12 @@
         "frequency_hz": {"type": "number", "minimum": 40, "maximum": 70},
         "power_factor": {"type": "number", "minimum": 0, "maximum": 1},
         "appliance_state": {"enum": ["off", "heating", "unknown"]},
-        "battery_voltage_v": {"type": "number", "minimum": 2.5, "maximum": 4.5},
+        "battery_voltage_v": {
+          "anyOf": [
+            {"type": "number", "minimum": 2.5, "maximum": 4.5},
+            {"type": "null"}
+          ]
+        },
         "connection_state": {"enum": ["online", "stale", "offline"]},
         "anomaly_status": {"enum": ["not_evaluated", "normal", "anomaly"]},
         "quality_status": {

@@ -8,4 +8,5 @@ __pycache__/
 data/*.db
 data/*.db-*
 firmware/include/local_secrets.h
+firmware/include/local_hardware.h
 firmware/.pio/

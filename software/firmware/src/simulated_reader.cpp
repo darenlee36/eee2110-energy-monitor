@@ -15,6 +15,7 @@ TelemetryReading SimulatedReader::read(std::uint32_t uptimeMs, const char *times
   reading.voltageV = 239.0F + std::sin(static_cast<float>(reading.sampleSequence) * 0.3F);
   reading.frequencyHz = 50.0F;
   reading.batteryVoltageV = std::fmax(3.72F, 4.08F - reading.sampleSequence * 0.0014F);
+  reading.hasBatteryVoltage = true;
 
   if (heating) {
     reading.activePowerW = 2050.0F + 20.0F * std::sin(static_cast<float>(reading.sampleSequence));

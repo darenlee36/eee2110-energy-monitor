@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 from test_models import valid_reading
 
-from energy_monitor.models import CycleDetectionSettings, TelemetryBatch, VolumeClass
+from energy_monitor.models import (
+    CycleDetectionSettings,
+    ManualCycleRecord,
+    TelemetryBatch,
+    VolumeClass,
+)
 from energy_monitor.simulator import batch_readings, generate_readings
 from energy_monitor.storage import IdempotencyConflict, SQLiteTelemetryStore
 
@@ -91,6 +96,28 @@ def test_processing_cycles_is_idempotent(tmp_path: Path) -> None:
     assert store.fetch_cycles()[0]["status"] == "completed"
 
 
+def test_manual_cycle_is_auditable_and_has_no_sensor_readings(tmp_path: Path) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "manual.db")
+
+    cycle_id = store.add_manual_cycle(
+        ManualCycleRecord(
+            started_at=datetime(2026, 9, 12, 2, 30, tzinfo=UTC),
+            duration_seconds=180,
+            energy_kwh=0.09,
+            label="Reference meter log",
+            notes="Copied from paper log",
+        )
+    )
+
+    cycle = store.fetch_cycle(cycle_id)
+    assert cycle is not None
+    assert cycle["record_source"] == "manual"
+    assert cycle["manual_notes"] == "Copied from paper log"
+    assert cycle["assessment"] == "not_evaluated"
+    assert cycle["custom_label"] == "Reference meter log"
+    assert store.fetch_cycle_readings(cycle_id) == []
+
+
 def test_manual_volume_correction_preserves_audit_history(tmp_path: Path) -> None:
     store, cycle_id = store_with_completed_cycle(tmp_path)
 
@@ -115,6 +142,15 @@ def test_fetch_cycle_and_its_readings(tmp_path: Path) -> None:
     assert rows[-1]["sample_sequence"] == cycle["end_sequence"]
 
 
+def test_store_accepts_telemetry_without_battery_measurement(tmp_path: Path) -> None:
+    batch = make_batch("12121212-1212-4212-8212-121212121212")
+    batch.readings[0].battery_voltage_v = None
+    store = SQLiteTelemetryStore(tmp_path / "optional-battery.db")
+
+    assert store.insert_batch(batch).accepted == 2
+    assert store.fetch_recent_readings()[0]["battery_voltage_v"] is None
+
+
 def test_volume_filter_uses_active_manual_label(tmp_path: Path) -> None:
     store, cycle_id = store_with_completed_cycle(tmp_path)
     store.save_volume_label(cycle_id, VolumeClass.ONE_LITRE)
@@ -128,3 +164,57 @@ def test_volume_label_requires_an_existing_cycle(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="cycle does not exist"):
         store.save_volume_label(uuid4(), VolumeClass.ONE_LITRE)
+
+
+def test_user_managed_cycle_labels_are_reusable_and_case_insensitive(
+    tmp_path: Path,
+) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+
+    assert store.add_cycle_label("  Full kettle  ") == "Full kettle"
+    assert store.add_cycle_label("full KETTLE") == "Full kettle"
+    store.save_cycle_label(cycle_id, "Full kettle")
+
+    assert store.list_cycle_labels() == ["Full kettle"]
+    assert store.fetch_cycle_label(cycle_id) == "Full kettle"
+    assert store.fetch_cycle(cycle_id)["custom_label"] == "Full kettle"
+
+
+def test_cycle_label_assignment_preserves_audit_history(tmp_path: Path) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+    store.add_cycle_label("0.5 L")
+    store.add_cycle_label("One mug")
+
+    store.save_cycle_label(cycle_id, "0.5 L")
+    store.save_cycle_label(cycle_id, "One mug")
+
+    history = store.fetch_cycle_label_history(cycle_id)
+    assert [row["label"] for row in history] == ["0.5 L", "One mug"]
+    assert [row["is_active"] for row in history] == [0, 1]
+
+
+def test_archived_cycle_label_is_hidden_but_preserves_records_and_can_return(
+    tmp_path: Path,
+) -> None:
+    store, cycle_id = store_with_completed_cycle(tmp_path)
+    store.add_cycle_label("One mug")
+    store.save_cycle_label(cycle_id, "One mug")
+
+    store.archive_cycle_label("one MUG")
+
+    assert store.list_cycle_labels() == []
+    assert store.fetch_cycle_label(cycle_id) == "One mug"
+    assert store.fetch_cycle_label_history(cycle_id)[0]["label"] == "One mug"
+    with pytest.raises(ValueError, match="cycle label does not exist"):
+        store.save_cycle_label(cycle_id, "One mug")
+
+    assert store.add_cycle_label("ONE MUG") == "One mug"
+    assert store.list_cycle_labels() == ["One mug"]
+
+
+@pytest.mark.parametrize("label", ["", "   ", "x" * 41])
+def test_cycle_label_validates_user_input(tmp_path: Path, label: str) -> None:
+    store = SQLiteTelemetryStore(tmp_path / "cycles.db")
+
+    with pytest.raises(ValueError, match="between 1 and 40 characters"):
+        store.add_cycle_label(label)
