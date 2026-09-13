@@ -26,6 +26,8 @@ This repository is ready for Streamlit Community Cloud. Create an app with:
 
 The dashboard runs locally without cloud credentials. Add Supabase secrets in Streamlit's
 Advanced settings only when the Supabase project is ready; never commit them to Git.
+Until then, set `ENERGY_MONITOR_SOURCE = "demo"` in Streamlit secrets to show a clearly marked,
+per-session simulated snapshot.
 
 ## Current status
 

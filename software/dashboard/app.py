@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+import tempfile
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 from components import (
@@ -21,7 +23,8 @@ from components import (
 from dotenv import load_dotenv
 
 from energy_monitor.dashboard_queries import get_cycle_detail, get_live_view, list_cycle_items
-from energy_monitor.models import CycleStatus
+from energy_monitor.models import CycleDetectionSettings, CycleStatus
+from energy_monitor.simulator import batch_readings, generate_readings
 from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.supabase_sync import (
     SupabaseConfig,
@@ -58,6 +61,28 @@ def monthly_usage_context() -> Decimal | None:
     return value if value >= 0 else None
 
 
+def demo_database_path() -> Path:
+    if "demo_database_path" not in st.session_state:
+        # ponytail: per-session temp DB; use managed demo storage only if public traffic grows.
+        st.session_state.demo_database_path = str(
+            Path(tempfile.gettempdir()) / f"energy-monitor-demo-{uuid4().hex}.db"
+        )
+    return Path(st.session_state.demo_database_path)
+
+
+def seed_demo_store(store: SQLiteTelemetryStore) -> None:
+    if store.count_readings() > 0:
+        return
+    count = 65
+    readings = generate_readings(
+        count,
+        datetime.now(UTC) - timedelta(seconds=(count - 1) * 5),
+    )
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+
+
 st.set_page_config(
     page_title="Energy Monitor",
     page_icon="⚡",
@@ -65,18 +90,33 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 load_styles()
+source_mode = os.environ.get("ENERGY_MONITOR_SOURCE", "auto").strip().lower()
 for key, value in DEFAULT_SESSION_STATE.items():
     if key not in st.session_state:
-        st.session_state[key] = value
+        st.session_state[key] = False if key == "auto_refresh" and source_mode == "demo" else value
 
-source_mode = os.environ.get("ENERGY_MONITOR_SOURCE", "auto").strip().lower()
 supabase_config = SupabaseConfig.from_environment()
+use_demo = source_mode == "demo"
 use_supabase = source_mode == "supabase" or (
     source_mode == "auto" and supabase_config is not None
 )
-database_default = DEFAULT_CLOUD_CACHE if use_supabase else DEFAULT_DATABASE
+database_default = (
+    demo_database_path()
+    if use_demo
+    else DEFAULT_CLOUD_CACHE
+    if use_supabase
+    else DEFAULT_DATABASE
+)
 database_path = Path(os.environ.get("ENERGY_MONITOR_DB", database_default))
 store = SQLiteTelemetryStore(database_path)
+if use_demo:
+    seed_demo_store(store)
+
+
+def dashboard_now() -> datetime:
+    if use_demo:
+        return store.latest_telemetry_timestamp() or datetime.now(UTC)
+    return datetime.now(UTC)
 
 
 def sync_cloud_source() -> None:
@@ -92,11 +132,12 @@ def sync_cloud_source() -> None:
 
 st.title("Energy Monitor")
 st.caption("Live electrical telemetry · automatic load-cycle detection · usage insights")
-st.caption(
-    "Data source: Supabase cloud with local cache"
-    if use_supabase
-    else "Data source: local development database"
-)
+if use_demo:
+    st.caption("Data source: demonstration mode · simulated snapshot · not a live measurement")
+elif use_supabase:
+    st.caption("Data source: Supabase cloud with local cache")
+else:
+    st.caption("Data source: local development database")
 
 controls = st.columns([2, 2, 1])
 with controls[0]:
@@ -118,7 +159,7 @@ if st.session_state.mode == "Live":
     @st.fragment(run_every="5s" if st.session_state.auto_refresh else None)
     def live_panel() -> None:
         sync_cloud_source()
-        view = get_live_view(store, datetime.now(UTC))
+        view = get_live_view(store, dashboard_now())
         st.markdown(
             render_command_bar(view.connection_state, view.updated_at),
             unsafe_allow_html=True,
@@ -128,7 +169,7 @@ if st.session_state.mode == "Live":
     live_panel()
 else:
     sync_cloud_source()
-    live_status = get_live_view(store, datetime.now(UTC))
+    live_status = get_live_view(store, dashboard_now())
     st.markdown(
         render_command_bar(live_status.connection_state, live_status.updated_at),
         unsafe_allow_html=True,

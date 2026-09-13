@@ -55,6 +55,22 @@ def test_dashboard_empty_state_has_refresh_controls_and_no_fake_metrics(
     assert "Estimated cost" not in labels
 
 
+def test_demo_source_seeds_simulated_dashboard_data(
+    tmp_path: Path,
+    monkeypatch: object,
+) -> None:
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "demo")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "demo.db"))
+
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
+
+    assert not app.exception
+    assert any("demonstration mode" in caption.value for caption in app.caption)
+    assert any(metric.label == "Active power now" for metric in app.metric)
+    assert len(app.get("plotly_chart")) == 3
+    assert app.session_state["auto_refresh"] is False
+
+
 def test_completed_cycle_renders_one_cycle_receipt(
     tmp_path: Path,
     monkeypatch: object,
