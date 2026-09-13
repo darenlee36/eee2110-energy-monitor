@@ -15,6 +15,18 @@ every appliance.
 
 Start with [`software/README.md`](software/README.md).
 
+## Deploy the dashboard
+
+This repository is ready for Streamlit Community Cloud. Create an app with:
+
+- Repository: `darenlee36/eee2110-energy-monitor`
+- Branch: `main`
+- Entrypoint: `software/dashboard/app.py`
+- Python: `3.12`
+
+The dashboard runs locally without cloud credentials. Add Supabase secrets in Streamlit's
+Advanced settings only when the Supabase project is ready; never commit them to Git.
+
 ## Current status
 
 - Local simulated telemetry path: implemented and tested.

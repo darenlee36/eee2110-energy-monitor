@@ -20,7 +20,7 @@ from energy_monitor.tariffs import estimate_cycle_charge, load_tariff_catalog
 
 DASHBOARD_PATH = Path(__file__).parents[1] / "dashboard" / "app.py"
 STYLES_PATH = Path(__file__).parents[1] / "dashboard" / "styles.css"
-STREAMLIT_CONFIG_PATH = Path(__file__).parents[1] / ".streamlit" / "config.toml"
+STREAMLIT_CONFIG_PATH = Path(__file__).parents[2] / ".streamlit" / "config.toml"
 CATALOG_PATH = (
     Path(__file__).parents[1] / "config" / "tariffs" / "tnb-domestic-general-rp4.json"
 )
