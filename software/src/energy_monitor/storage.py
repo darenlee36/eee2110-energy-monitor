@@ -50,6 +50,12 @@ class SQLiteTelemetryStore:
                     received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
 
+                CREATE TABLE IF NOT EXISTS cloud_sync_state (
+                    source TEXT PRIMARY KEY,
+                    received_at TEXT NOT NULL,
+                    row_id TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS telemetry (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     device_id TEXT NOT NULL,
@@ -211,6 +217,25 @@ class SQLiteTelemetryStore:
                         ON telemetry(timestamp DESC);
                     """
                 )
+
+    def cloud_sync_cursor(self, source: str) -> tuple[str, str] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT received_at, row_id FROM cloud_sync_state WHERE source = ?",
+                (source,),
+            ).fetchone()
+        return (row["received_at"], row["row_id"]) if row else None
+
+    def save_cloud_sync_cursor(self, source: str, received_at: str, row_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO cloud_sync_state (source, received_at, row_id) VALUES (?, ?, ?)
+                ON CONFLICT(source) DO UPDATE SET
+                    received_at = excluded.received_at, row_id = excluded.row_id
+                """,
+                (source, received_at, row_id),
+            )
 
     @staticmethod
     def _request_hash(batch: TelemetryBatch) -> str:
