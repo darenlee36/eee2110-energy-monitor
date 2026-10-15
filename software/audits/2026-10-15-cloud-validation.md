@@ -11,6 +11,8 @@
 - `ingest-telemetry` uses custom `x-device-token` authentication with platform JWT checking disabled.
 - Missing and invalid device tokens return HTTP 401.
 - The private device token and server key are stored only in the Git-ignored local `.env` file and the relevant cloud secrets.
+- Streamlit Community Cloud now uses server-only Supabase credentials and
+  `ENERGY_MONITOR_SOURCE=supabase`. The public Live view displays the cloud cycle.
 
 ## Synthetic end-to-end test
 
@@ -29,7 +31,7 @@ These are synthetic readings, not hardware evidence or training data.
 | Heating-sample span | 145 seconds between first and last of 30 heating samples |
 | Meter energy | 0.085417 kWh, including the increment from the idle predecessor |
 | Integrated energy | 0.082569444 kWh over the 145-second sampled span |
-| Dashboard rendering | Live and Cycles passed Streamlit AppTest; three live charts |
+| Dashboard rendering | Live and Cycles passed Streamlit AppTest and hosted-browser inspection |
 | Gross charge range | RM0.0380–RM0.0465, partial estimate |
 
 Duration is the observed first-to-last heating sample span. The simulator accumulates 30
@@ -38,14 +40,21 @@ sampling-boundary convention must be checked during real-data calibration.
 
 ## Remaining work
 
-- Configure the public Streamlit deployment with server-side Supabase secrets and change
-  `ENERGY_MONITOR_SOURCE` from `demo` to `supabase`, then verify the hosted interface.
 - Test real ESP32 telemetry separately before claiming a working physical monitor.
 - Review cloud-sync handling of delayed readings, equal timestamps and history pagination.
 - Manual cycle records and custom labels currently remain in the dashboard's local SQLite
   database; hosted restarts do not provide durable storage for those edits.
+- The cycle table currently calls telemetry-derived synthetic cycles `Measured`, with a separate
+  simulation-evidence note. Improve provenance before mixing test and real training records.
 - October 2026 AFA is absent from the current tariff catalog; household usage is also unknown.
   The charge is therefore a partial range, not a validated household bill.
 - Hardware-calibrated detection, labelled datasets, Isolation Forest and agentic reporting remain pending.
 
 Private credentials are deliberately excluded from this evidence record.
+
+## Progress checkpoint
+
+Milestones 1–6 of the agreed ten-item software checklist are complete: 60%.
+Real-device integration, real-data validation, Isolation Forest and reporting remain pending.
+The software-only daily checker was recreated at 10:00 AM Asia/Kuala_Lumpur under automation
+ID `daily-fyp-software-progress-checker`, targeting the FYP Software Development task.

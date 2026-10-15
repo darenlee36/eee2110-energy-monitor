@@ -195,7 +195,7 @@ optional because the PZEM does not provide it.
 
 ## Deferred work
 
-Water-volume model training, Isolation Forest validation, agentic reporting, cloud deployment,
+Water-volume model training, Isolation Forest validation, agentic reporting,
 real UART pin selection, and physical hardware validation remain outside this software-dashboard
 build. Manual labels are collected now so a later volume model can be trained on validated cycles.
 
