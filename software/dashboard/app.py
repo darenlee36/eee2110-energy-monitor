@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -22,6 +24,7 @@ from components import (
 )
 from dotenv import load_dotenv
 
+from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.dashboard_queries import get_cycle_detail, get_live_view, list_cycle_items
 from energy_monitor.models import CycleDetectionSettings, CycleStatus
 from energy_monitor.simulator import batch_readings, generate_readings
@@ -59,6 +62,34 @@ def monthly_usage_context() -> Decimal | None:
     except (InvalidOperation, ValueError):
         return None
     return value if value >= 0 else None
+
+
+def owner_can_edit() -> bool:
+    if not use_supabase:
+        return True
+    password = os.environ.get("ENERGY_MONITOR_EDIT_PASSWORD", "")
+    fingerprint = hashlib.sha256(password.encode()).hexdigest() if password else ""
+    authorized = bool(password) and hmac.compare_digest(
+        st.session_state.get("owner_session", ""), fingerprint
+    )
+    with st.expander("Owner controls"):
+        if authorized:
+            st.caption("Editing unlocked for this session.")
+            if st.button("Lock editing"):
+                st.session_state.pop("owner_session", None)
+                st.rerun()
+        elif not password:
+            st.caption("Viewing only. Owner editing is not configured.")
+        else:
+            with st.form("owner_login", clear_on_submit=True):
+                entered = st.text_input("Owner password", type="password")
+                submitted = st.form_submit_button("Unlock editing")
+            if submitted:
+                if hmac.compare_digest(entered.encode(), password.encode()):
+                    st.session_state.owner_session = fingerprint
+                    st.rerun()
+                st.error("Incorrect owner password")
+    return authorized
 
 
 def demo_database_path() -> Path:
@@ -108,7 +139,11 @@ database_default = (
     else DEFAULT_DATABASE
 )
 database_path = Path(os.environ.get("ENERGY_MONITOR_DB", database_default))
-store = SQLiteTelemetryStore(database_path)
+store = (
+    SupabaseCycleStore(database_path, supabase_config)
+    if use_supabase and supabase_config is not None
+    else SQLiteTelemetryStore(database_path)
+)
 if use_demo:
     seed_demo_store(store)
 
@@ -127,8 +162,12 @@ def sync_cloud_source() -> None:
         return
     try:
         sync_supabase_telemetry(store, supabase_config)
+        if isinstance(store, SupabaseCycleStore):
+            store.refresh_edits()
     except SupabaseSyncError:
         st.warning("Cloud sync unavailable. Showing locally cached data.")
+    except ValueError:
+        st.warning("Cloud edits unavailable. Showing locally cached records.")
 
 st.title("Energy Monitor")
 st.caption("Live electrical telemetry · automatic load-cycle detection · usage insights")
@@ -138,6 +177,10 @@ elif use_supabase:
     st.caption("Data source: Supabase cloud with local cache")
 else:
     st.caption("Data source: local development database")
+
+can_edit = owner_can_edit()
+if isinstance(store, SupabaseCycleStore):
+    store.can_edit = can_edit
 
 controls = st.columns([2, 2, 1])
 with controls[0]:
@@ -174,7 +217,7 @@ else:
         render_command_bar(live_status.connection_state, live_status.updated_at),
         unsafe_allow_html=True,
     )
-    manual_cycle_id = render_manual_cycle_entry(store)
+    manual_cycle_id = render_manual_cycle_entry(store) if can_edit else None
     if manual_cycle_id is not None:
         st.session_state.selected_cycle_id = str(manual_cycle_id)
     status_filter, label_filter = render_cycle_filters(store)
@@ -211,20 +254,19 @@ else:
                 chart_key="cycle_detail_chart",
             )
             st.caption(
-                f"Cyan: measured power · magenta dashed: 1,000 W start threshold · "
+                f"Cyan: recorded power · magenta dashed: 1,000 W start threshold · "
                 f"green rings: cycle boundaries. {detail.chart_summary}"
             )
         else:
             st.info(detail.chart_summary)
-        render_cycle_label(store, detail.summary.cycle_id, detail.cycle_label)
+        if can_edit:
+            render_cycle_label(store, detail.summary.cycle_id, detail.cycle_label)
         render_tariff_disclosure(
             detail.tariff_estimate,
-            "Entered cycle energy"
-            if detail.record_source == "manual"
-            else "Measured cycle energy",
+            detail.energy_label,
         )
 
 st.caption(
-    "Simulation evidence only. Unusual behaviour means different from the recorded baseline; "
+    "Unusual behaviour means different from the recorded baseline; "
     "it does not confirm a physical fault."
 )

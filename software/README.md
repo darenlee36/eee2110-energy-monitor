@@ -131,10 +131,28 @@ $env:SUPABASE_SECRET_KEY = "YOUR_SERVER_ONLY_KEY"
 .\scripts\start-dashboard.ps1
 ```
 
-The dashboard pulls only newer telemetry into `data/supabase-cache.db`, then performs cycle
-detection locally. Never put the service-role key in ESP32 firmware, browser code, or source
-control. Legacy projects may use `SUPABASE_SERVICE_ROLE_KEY` instead. Manual records and user
-labels remain in the selected local dashboard database.
+The dashboard pulls telemetry into `data/supabase-cache.db`, then performs cycle detection locally.
+Each refresh imports one bounded page (up to 500 rows), ordered by cloud arrival time and row ID.
+The saved cursor resumes after restarts and does not discard delayed device timestamps or rows
+that share an arrival time. Import retries are idempotent. Never put the server key in ESP32
+firmware, browser code, or source control. Legacy projects may use `SUPABASE_SERVICE_ROLE_KEY`.
+
+In Supabase mode, manual records, saved labels, label removal (archival), and cycle assignments
+are written transactionally to Supabase and restored into a fresh SQLite cache. The additive
+`durable_dashboard_edits` migration uses existing tables and server-only RPC functions; anonymous
+and authenticated browser clients cannot execute them. Local/demo edits stay local.
+
+Public cloud visitors can view and export records but cannot edit. Set a separate random
+`ENERGY_MONITOR_EDIT_PASSWORD` in the dashboard server environment (Streamlit Secrets on the
+hosted site). Use **Owner controls → Unlock editing** to enable edits for that browser session,
+and **Lock editing** when finished. Missing owner configuration fails closed to viewing only.
+This is a single-owner password gate, not a multi-user account/role system. Keep the password in
+a password manager; do not reuse the device token or Supabase key.
+
+Cycle receipts and exports distinguish simulated, sensor-mode, mixed and unverified origins.
+Origin is derived from firmware mode/device identifiers, not a calibration certificate or
+cryptographic proof. Older cached summaries without provenance remain unverified until rebuilt.
+Simulated, mixed, unknown and manual records do not enter the sensor-only peer comparison.
 
 For a new hosted project, use the validated CLI flow below. Review the dry run before applying
 the migrations:

@@ -32,6 +32,51 @@ def isolate_dashboard_source(monkeypatch: object) -> None:
     monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
 
 
+def test_cloud_edit_controls_require_owner_password(tmp_path: Path, monkeypatch: object) -> None:
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-server-key")
+    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "test-owner-password")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "cloud.db"))
+    monkeypatch.setattr(
+        "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_edits", lambda s: None
+    )
+    monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Cycles"
+    app.run()
+    assert not app.exception
+    assert not any("Add manual cycle" in e.label for e in app.expander)
+    app.text_input[0].set_value("wrong-password")
+    next(b for b in app.button if b.label == "Unlock editing").click().run()
+    assert app.error[0].value == "Incorrect owner password"
+    assert not any("Add manual cycle" in e.label for e in app.expander)
+    app.text_input[0].set_value("test-owner-password")
+    next(b for b in app.button if b.label == "Unlock editing").click().run()
+    assert not app.exception
+    assert any("Add manual cycle" in e.label for e in app.expander)
+    next(b for b in app.button if b.label == "Lock editing").click().run()
+    assert not any("Add manual cycle" in e.label for e in app.expander)
+
+
+def test_cloud_owner_configuration_missing_fails_closed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-server-key")
+    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "unconfigured.db"))
+    monkeypatch.setattr(
+        "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_edits", lambda s: None
+    )
+    monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Cycles"
+    app.run()
+    assert not app.exception
+    assert not any("Add manual cycle" in e.label for e in app.expander)
+    assert any("Viewing only" in c.value for c in app.caption)
+
+
 def build_dashboard_cycle_database(tmp_path: Path) -> Path:
     database = tmp_path / "dashboard-cycle.db"
     store = SQLiteTelemetryStore(database)
@@ -88,7 +133,7 @@ def test_completed_cycle_renders_one_cycle_receipt(
 
     assert not app.exception
     labels = [metric.label for metric in app.metric]
-    assert "Measured cycle energy" in labels
+    assert "Simulated cycle energy" in labels
     assert "Estimated gross cycle charge" in labels
     assert sum(button.label == "Reset view" for button in app.button) == 3
     assert "Frequency now" in labels
@@ -144,7 +189,7 @@ def test_cycles_mode_defaults_to_latest_completed_cycle(
     assert table.iloc[0]["Start (MYT)"] == "12 Sep, 14:00"
     assert table.iloc[0]["Duration"] == "2m 25s"
     assert table.iloc[0]["Energy"] == "0.0854 kWh"
-    assert "Measured cycle energy" in [metric.label for metric in app.metric]
+    assert "Simulated cycle energy" in [metric.label for metric in app.metric]
     assert any(button.label == "Add label" for button in app.button)
     assert any(button.label == "Add manual record" for button in app.button)
     assert any(button.key == "cycle_detail_chart_reset_button" for button in app.button)

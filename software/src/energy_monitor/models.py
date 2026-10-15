@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -118,6 +119,15 @@ class TelemetryReading(BaseModel):
     quality_status: QualityStatus
     firmware_version: str = Field(min_length=1, max_length=32)
 
+    @property
+    def data_origin(self) -> Literal["simulated", "sensor", "unknown"]:
+        # Firmware mode is evidence of origin, not proof of physical calibration.
+        if self.device_id.startswith("sim-cloud-") or self.firmware_version.startswith("sim-"):
+            return "simulated"
+        if self.firmware_version.startswith("pzem-"):
+            return "sensor"
+        return "unknown"
+
     @field_validator("timestamp")
     @classmethod
     def timestamp_must_include_timezone(cls, value: datetime) -> datetime:
@@ -177,6 +187,7 @@ class CycleSummary(BaseModel):
     largest_gap_seconds: int = Field(ge=0)
     quality_note: str
     detection_version: str = Field(min_length=1, max_length=64)
+    data_origin: Literal["simulated", "sensor", "mixed", "unknown"] = "unknown"
     predicted_volume: VolumeClass | None = None
     prediction_confidence: float | None = Field(default=None, ge=0, le=1)
     volume_model_version: str | None = None

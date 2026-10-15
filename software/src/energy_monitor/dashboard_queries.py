@@ -42,6 +42,7 @@ class CycleListItem(BaseModel):
     effective_volume: VolumeClass
     cycle_label: str | None = None
     record_source: Literal["measured", "manual"]
+    source_label: str = "Unverified"
     assessment: CycleAssessment
     status: CycleStatus
 
@@ -79,6 +80,19 @@ class CycleDetail(BaseModel):
     comparison_text: str
     chart_summary: str
 
+    @property
+    def energy_label(self) -> str:
+        return cycle_energy_label(self.summary, self.record_source)
+
+
+def cycle_energy_label(summary: CycleSummary, record_source: str) -> str:
+    if record_source == "manual":
+        return "Entered cycle energy"
+    prefix = {"simulated": "Simulated", "sensor": "Measured"}.get(
+        summary.data_origin, "Recorded"
+    )
+    return f"{prefix} cycle energy"
+
 
 def display_volume(volume: VolumeClass) -> str:
     return {
@@ -115,7 +129,7 @@ def _reading_from_row(row: dict[str, object]) -> TelemetryReading:
 
 def _summary_from_row(row: dict[str, object]) -> CycleSummary:
     return CycleSummary.model_validate(
-        {name: row[name] for name in CycleSummary.model_fields}
+        {name: row[name] for name in CycleSummary.model_fields if name in row}
     )
 
 
@@ -156,12 +170,19 @@ def _cycle_item(
         ended_at=summary.ended_at,
         duration_seconds=summary.duration_seconds,
         energy_kwh=summary.meter_energy_kwh,
+        energy_label=cycle_energy_label(summary, str(row.get("record_source", "measured"))),
         charge_text=_charge_text(estimate),
         effective_volume=VolumeClass(str(row["effective_volume"])),
         cycle_label=(
             None if row.get("custom_label") is None else str(row["custom_label"])
         ),
         record_source=str(row.get("record_source", "measured")),
+        source_label=(
+            "Manual" if row.get("record_source") == "manual" else {
+                "sensor": "Measured", "simulated": "Simulated", "mixed": "Mixed",
+                "unknown": "Unverified",
+            }[summary.data_origin]
+        ),
         assessment=summary.assessment,
         status=summary.status,
     )
@@ -320,6 +341,8 @@ def get_cycle_detail(
         if peer["cycle_id"] != str(summary.cycle_id)
         and peer["assessment"] == CycleAssessment.NORMAL.value
         and peer.get("record_source", "measured") == "measured"
+        and peer.get("data_origin") == "sensor"
+        and summary.data_origin == "sensor"
         and cycle_label is not None
         and peer.get("custom_label") == cycle_label
     ]

@@ -63,6 +63,24 @@ def scenario_readings(
     return result
 
 
+@pytest.mark.parametrize("firmware, expected", [
+    ("sim-fw-0.2.0", "simulated"),
+    ("pzem-fw-0.2.0", "sensor"),
+    ("unrecognized-1.0", "unknown"),
+])
+def test_cycle_origin_is_explicit(firmware, expected):
+    samples = [item.model_copy(update={"firmware_version": firmware})
+               for item in scenario_readings(2, 30, 3, 2000)]
+    assert detect_cycles(samples, SETTINGS)[0].data_origin == expected
+    assert "data_origin" not in samples[0].model_dump()  # Wire contract unchanged.
+
+
+def test_mixed_cycle_is_not_sensor_evidence():
+    samples = scenario_readings(2, 30, 3, 2000)
+    samples[4] = samples[4].model_copy(update={"firmware_version": "pzem-fw-0.2.0"})
+    assert detect_cycles(samples, SETTINGS)[0].data_origin == "mixed"
+
+
 def test_detect_cycles_groups_one_boiling_period_into_one_cycle() -> None:
     readings = scenario_readings(idle=3, heating=30, trailing_idle=3, power_w=2000.0)
 

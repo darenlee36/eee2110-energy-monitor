@@ -41,16 +41,46 @@ sampling-boundary convention must be checked during real-data calibration.
 ## Remaining work
 
 - Test real ESP32 telemetry separately before claiming a working physical monitor.
-- Review cloud-sync handling of delayed readings, equal timestamps and history pagination.
-- Manual cycle records and custom labels currently remain in the dashboard's local SQLite
-  database; hosted restarts do not provide durable storage for those edits.
-- The cycle table currently calls telemetry-derived synthetic cycles `Measured`, with a separate
-  simulation-evidence note. Improve provenance before mixing test and real training records.
 - October 2026 AFA is absent from the current tariff catalog; household usage is also unknown.
   The charge is therefore a partial range, not a validated household bill.
 - Hardware-calibrated detection, labelled datasets, Isolation Forest and agentic reporting remain pending.
 
 Private credentials are deliberately excluded from this evidence record.
+
+## Reliability and durable-edit release
+
+- Cloud sync now uses a persisted `(received_at, id)` cursor instead of device timestamps.
+  Tests cover delayed device timestamps, equal arrival times, mixed devices, pagination,
+  process restart, malformed pages, and failed cycle processing without cursor advancement.
+- A fresh cache recovered the actual 36 cloud test rows in pages `[7,7,7,7,7,1,0]`.
+- The additive `durable_dashboard_edits` migration was applied to the hosted project.
+  It reuses existing tables; no new service, dependency, or application table was added.
+- Owner writes now use server-only, transactional RPCs. A live HTTP add/archive round trip
+  survived a fresh local cache. The explicitly synthetic validation label remains archived.
+- Manual insertion and label reassignment passed database assertions inside a transaction
+  that was rolled back. No fake manual record was left in the shared dataset.
+- Both `anon` and `authenticated` roles lack RPC execution privileges; only the server role
+  can use dashboard edit RPCs. Security advisors show no warning/error findings; the
+  ingestion-batch table's no-public-policy informational notice is intentional.
+- Cloud edits require an owner session. Wrong passwords fail, lock/unlock works, and absent
+  owner configuration fails closed. A separate random owner password was generated into the
+  Git-ignored local `.env`; adding it to Streamlit Secrets still requires the owner.
+- Firmware/device-derived provenance now distinguishes simulated, sensor, mixed, and unknown
+  cycles. The actual cloud test cycle is `Simulated`; unknown legacy summaries remain
+  unverified. Sensor mode alone is not calibration evidence. Only sensor-origin, normal,
+  completed peers participate in duration comparisons; no model trainer exists yet.
+- Final local regression run: **109 passed**, eight upstream Streamlit/NumPy deprecation
+  warnings; Ruff clean. This is a fresh run, not the historical 93/96-test result.
+
+Deployment checks: local UI tests and hosted database checks passed. Publish via the existing
+GitHub/Streamlit path and inspect both hosted views. If either view fails or public write
+controls appear without owner authorization, revert the release commit and redeploy; retain
+the additive migration and data. No destructive database rollback is needed.
+
+Known limits: the polling cursor is not a realtime stream or a general CDC system. Concurrent
+transactions committing with an earlier arrival timestamp need separate stress testing if
+multi-device concurrency grows. The shared owner password is a single-owner gate, not
+individual user accounts. The real-data and tariff-calibration gaps above remain open.
 
 ## Progress checkpoint
 

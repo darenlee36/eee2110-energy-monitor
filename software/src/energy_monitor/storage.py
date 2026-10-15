@@ -407,15 +407,17 @@ class SQLiteTelemetryStore:
                 )
         return cycles
 
-    def add_manual_cycle(self, record: ManualCycleRecord) -> UUID:
+    @staticmethod
+    def manual_cycle_summary(
+        record: ManualCycleRecord, cycle_id: UUID | None = None
+    ) -> CycleSummary:
         if record.started_at > datetime.now(UTC):
             raise ValueError("start time cannot be in the future")
-        label = self._validated_cycle_label(record.label)
-        cycle_id = uuid4()
+        cycle_id = cycle_id or uuid4()
         sequence = cycle_id.int % 9_223_372_036_854_775_807
         ended_at = record.started_at + timedelta(seconds=record.duration_seconds)
         average_power_w = record.energy_kwh * 3_600_000 / record.duration_seconds
-        summary = CycleSummary(
+        return CycleSummary(
             cycle_id=cycle_id,
             device_id="manual-entry",
             profile_id="manual-entry",
@@ -447,6 +449,11 @@ class SQLiteTelemetryStore:
             ),
             detection_version="manual-entry-v1",
         )
+
+    def add_manual_cycle(self, record: ManualCycleRecord) -> UUID:
+        summary = self.manual_cycle_summary(record)
+        cycle_id = summary.cycle_id
+        label = self._validated_cycle_label(record.label)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -790,4 +797,65 @@ class SQLiteTelemetryStore:
                 (str(cycle_id),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def restore_cloud_edits(self, state: dict[str, object]) -> None:
+        """Refresh the disposable edit cache without altering raw telemetry."""
+        manuals = [
+            (CycleSummary.model_validate(item["summary"]), item.get("notes"))
+            for item in state["manual_cycles"]
+        ]
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO cycle_detection_versions
+                (version, settings_json, calibration_status, effective_at)
+                VALUES ('manual-entry-v1', '{}', 'simulation_default', ?)""",
+                (datetime.now(UTC).isoformat(),),
+            )
+            for item in state["labels"]:
+                label = self._validated_cycle_label(item["label"])
+                connection.execute(
+                    """INSERT INTO cycle_label_options (label, is_active) VALUES (?, ?)
+                    ON CONFLICT(label) DO UPDATE SET is_active = excluded.is_active""",
+                    (label, int(item["is_active"])),
+                )
+            for summary, notes in manuals:
+                values = summary.model_dump(mode="json")
+                connection.execute(
+                    """INSERT INTO appliance_cycles (
+                    cycle_id, device_id, profile_id, started_at, ended_at, start_sequence,
+                    end_sequence, status, assessment, summary_json, detection_version,
+                    record_source, manual_notes) VALUES (
+                    :cycle_id, :device_id, :profile_id, :started_at, :ended_at, :start_sequence,
+                    :end_sequence, :status, :assessment, :summary_json, :detection_version,
+                    'manual', :manual_notes)
+                    ON CONFLICT(cycle_id) DO UPDATE SET manual_notes = excluded.manual_notes""",
+                    {**values, "summary_json": summary.model_dump_json(), "manual_notes": notes},
+                )
+            for item in state["assignments"]:
+                cycle_id = str(UUID(item["cycle_id"]))
+                if not connection.execute(
+                    "SELECT 1 FROM appliance_cycles WHERE cycle_id = ?", (cycle_id,)
+                ).fetchone():
+                    continue  # Its telemetry may be on a later sync page.
+                option = connection.execute(
+                    "SELECT id FROM cycle_label_options WHERE label = ? COLLATE NOCASE",
+                    (item["label"],),
+                ).fetchone()
+                if option is None:
+                    raise ValueError("cloud assignment has no label option")
+                current = connection.execute(
+                    """SELECT label_option_id FROM cycle_label_assignments
+                    WHERE cycle_id = ? AND is_active = 1""", (cycle_id,),
+                ).fetchone()
+                if current and current["label_option_id"] == option["id"]:
+                    continue
+                connection.execute(
+                    "UPDATE cycle_label_assignments SET is_active = 0 WHERE cycle_id = ?",
+                    (cycle_id,),
+                )
+                connection.execute(
+                    """INSERT INTO cycle_label_assignments
+                    (cycle_id, label_option_id, source, is_active) VALUES (?, ?, 'dashboard', 1)""",
+                    (cycle_id, option["id"]),
+                )
 

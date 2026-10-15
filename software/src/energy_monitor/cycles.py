@@ -114,6 +114,7 @@ def summarize_cycle(
     last = valid[-1]
     ended_at = None if status is CycleStatus.ACTIVE else last.timestamp
     end_sequence = None if status is CycleStatus.ACTIVE else last.sample_sequence
+    origins = {sample.data_origin for sample in samples}
     return CycleSummary(
         cycle_id=cycle_uuid(first.device_id, first.profile_id, first.sample_sequence),
         device_id=first.device_id,
@@ -143,6 +144,7 @@ def summarize_cycle(
         largest_gap_seconds=largest_gap,
         quality_note="; ".join(notes),
         detection_version=settings.version,
+        data_origin=origins.pop() if len(origins) == 1 else "mixed",
     )
 
 

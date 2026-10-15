@@ -92,6 +92,8 @@ def render_live_state(view: LiveView) -> None:
         ),
     }
     title, caption, css_class = state_labels[view.state]
+    origin = view.recent_readings[-1].data_origin if view.recent_readings else "unknown"
+    st.caption(f"Latest telemetry origin: {origin} · sensor mode is not calibration evidence")
     st.markdown(
         f'<section class="state-panel {css_class}" role="status" aria-live="polite">'
         f'<h2>{title}</h2><p>{caption}</p></section>',
@@ -107,15 +109,16 @@ def render_live_state(view: LiveView) -> None:
         chart_key="live_power_chart",
     )
     st.caption(
-        "Cyan: measured power · magenta dashed: 1,000 W start threshold · orange band: "
+        "Cyan: recorded power · magenta dashed: 1,000 W start threshold · orange band: "
         "detected cycle. Five-second sampling."
     )
 
     if view.active_cycle is not None:
+        origin = view.active_cycle.data_origin
         active = st.columns(3)
         active[0].metric("Cycle elapsed so far", f"{view.elapsed_seconds or 0} s")
         active[1].metric(
-            "Measured cycle energy so far",
+            f"{'Simulated' if origin == 'simulated' else 'Recorded'} cycle energy so far",
             f"{view.energy_so_far_kwh or 0:.5f} kWh",
         )
         active[2].metric(
@@ -126,7 +129,7 @@ def render_live_state(view: LiveView) -> None:
         st.subheader("Last completed cycle")
         receipt = st.columns(3)
         receipt[0].metric("Cycle duration", f"{view.last_cycle.duration_seconds} s")
-        receipt[1].metric("Measured cycle energy", f"{view.last_cycle.energy_kwh:.5f} kWh")
+        receipt[1].metric(view.last_cycle.energy_label, f"{view.last_cycle.energy_kwh:.5f} kWh")
         receipt[2].metric("Estimated gross cycle charge", view.last_cycle.charge_text)
     energy_figure = build_cycle_energy_figure(view)
     if energy_figure is not None:
@@ -475,7 +478,7 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
                 "Energy": f"{item.energy_kwh:.4f} kWh",
                 "Charge": item.charge_text,
                 "Label": item.cycle_label or "Unlabelled",
-                "Source": item.record_source.title(),
+                "Source": item.source_label,
                 "Assessment": item.assessment.value.replace("_", " ").title(),
                 "Status": item.status.value.title(),
             }
@@ -512,12 +515,8 @@ def render_cycle_receipt(detail: CycleDetail) -> None:
     )
     metrics = st.columns(3)
     metrics[0].metric("Cycle duration", f"{summary.duration_seconds} s")
-    energy_label = (
-        "Entered cycle energy"
-        if detail.record_source == "manual"
-        else "Measured cycle energy"
-    )
-    metrics[1].metric(energy_label, f"{summary.meter_energy_kwh:.5f} kWh")
+    metrics[1].metric(detail.energy_label, f"{summary.meter_energy_kwh:.5f} kWh")
+    st.caption(f"Data origin: {summary.data_origin}. Sensor mode is not calibration evidence.")
     metrics[2].metric("Estimated gross cycle charge", _charge_value(detail.tariff_estimate))
     secondary = st.columns(3)
     if detail.record_source == "manual":

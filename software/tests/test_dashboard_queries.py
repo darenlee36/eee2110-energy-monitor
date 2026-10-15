@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from energy_monitor.dashboard_queries import (
+    _summary_from_row,
     comparison_text,
     get_cycle_detail,
     get_live_view,
@@ -33,7 +34,8 @@ def test_live_view_distinguishes_instantaneous_values_from_cycle_totals(
     assert view.state in {"idle", "heating", "cycle_complete"}
     assert view.latest_power_w is not None and view.latest_power_w >= 0
     assert view.last_cycle is not None
-    assert view.last_cycle.energy_label == "Measured cycle energy"
+    assert view.last_cycle.energy_label == "Simulated cycle energy"
+    assert view.last_cycle.source_label == "Simulated"
     assert view.recent_readings
     assert view.cycle_readings
     assert view.recent_readings[-1].timestamp == view.updated_at
@@ -50,6 +52,13 @@ def test_empty_live_view_is_explicit(tmp_path: Path) -> None:
     assert view.quality_note == "No telemetry has been received"
     assert view.recent_readings == []
     assert view.cycle_readings == []
+
+
+def test_legacy_cycle_without_origin_is_not_claimed_as_measured(tmp_path: Path):
+    store = populated_store(tmp_path)
+    row = store.fetch_cycles()[0]
+    row.pop("data_origin")
+    assert _summary_from_row(row).data_origin == "unknown"
 
 
 def test_cycle_detail_contains_only_cycle_readings_and_tariff_disclosure(
