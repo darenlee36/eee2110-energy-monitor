@@ -77,6 +77,14 @@ GitHub/Streamlit path and inspect both hosted views. If either view fails or pub
 controls appear without owner authorization, revert the release commit and redeploy; retain
 the additive migration and data. No destructive database rollback is needed.
 
+Hosted verification: release `4d66237` was pushed to the feature branch and `main`. Streamlit's
+hot update initially mixed a newly loaded subclass with a stale storage base class and raised
+`AttributeError: restore_cloud_edits`. A full **Reboot app** loaded the consistent release and
+resolved the error without code changes. Both hosted Live and Cycles now render the synthetic
+cycle; its Source is `Simulated`, and public controls show **Viewing only. Owner editing is not
+configured.** The archived validation label is absent from future label choices. Future
+releases that change imported classes require a cold restart plus this hosted smoke check.
+
 Known limits: the polling cursor is not a realtime stream or a general CDC system. Concurrent
 transactions committing with an earlier arrival timestamp need separate stress testing if
 multi-device concurrency grows. The shared owner password is a single-owner gate, not
