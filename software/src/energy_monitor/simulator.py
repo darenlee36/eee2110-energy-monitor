@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
 import httpx
+from dotenv import load_dotenv
 
 from energy_monitor.models import TelemetryBatch, TelemetryReading
 
@@ -153,14 +156,22 @@ def batch_readings(readings: Iterable[TelemetryReading]) -> list[TelemetryBatch]
     ]
 
 
-def upload_batches(url: str, batches: Iterable[TelemetryBatch]) -> tuple[int, int]:
+def upload_batches(
+    url: str,
+    batches: Iterable[TelemetryBatch],
+    *,
+    device_token: str | None = None,
+) -> tuple[int, int]:
+    if device_token and httpx.URL(url).scheme != "https":
+        raise ValueError("Device-token uploads require HTTPS")
     accepted = 0
     duplicates = 0
+    headers = {"x-device-token": device_token} if device_token else {}
     with httpx.Client(timeout=10.0) as client:
         for batch in batches:
             response = client.post(
                 url,
-                headers={"Idempotency-Key": str(batch.batch_id)},
+                headers={**headers, "Idempotency-Key": str(batch.batch_id)},
                 json=batch.model_dump(mode="json"),
             )
             response.raise_for_status()
@@ -171,6 +182,7 @@ def upload_batches(url: str, batches: Iterable[TelemetryBatch]) -> tuple[int, in
 
 
 def main() -> None:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     parser = argparse.ArgumentParser(description="Upload synthetic kettle telemetry")
     parser.add_argument(
         "--url",
@@ -193,8 +205,13 @@ def main() -> None:
         count = scenario_lengths[args.scenario]
         start_at = datetime.now(UTC) - timedelta(seconds=(count - 1) * 5)
         readings = generate_cycle_scenario(args.scenario, start_at)
+    device_token = os.environ.get("DEVICE_INGEST_TOKEN", "").strip() or None
+    if device_token:
+        # Each cloud test has its own identity, preserving real device sequences.
+        device_id = f"sim-cloud-{uuid4().hex[:12]}"
+        readings = [item.model_copy(update={"device_id": device_id}) for item in readings]
     batches = batch_readings(readings)
-    accepted, duplicates = upload_batches(args.url, batches)
+    accepted, duplicates = upload_batches(args.url, batches, device_token=device_token)
     print(
         f"Uploaded {len(batches)} batches: {accepted} accepted readings, "
         f"{duplicates} duplicate readings"

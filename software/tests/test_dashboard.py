@@ -26,6 +26,12 @@ CATALOG_PATH = (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_dashboard_source(monkeypatch: object) -> None:
+    # Developer credentials in .env must never turn unit tests into cloud requests.
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
+
+
 def build_dashboard_cycle_database(tmp_path: Path) -> Path:
     database = tmp_path / "dashboard-cycle.db"
     store = SQLiteTelemetryStore(database)

@@ -1,9 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
+import httpx
+import pytest
+
+from energy_monitor import simulator
 from energy_monitor.simulator import (
     batch_readings,
     generate_cycle_scenario,
     generate_readings,
+    upload_batches,
 )
 
 
@@ -74,4 +79,55 @@ def test_short_spike_scenario_has_only_one_heating_reading() -> None:
     )
 
     assert len([item for item in readings if item.active_power_w > 1000]) == 1
+
+
+def test_cloud_upload_sends_device_token_and_idempotency_key(monkeypatch: object) -> None:
+    batches = batch_readings(generate_cycle_scenario("normal", datetime.now(UTC)))
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"accepted": 6, "duplicates": 0}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: client)
+
+    assert upload_batches(
+        "https://project.supabase.co/functions/v1/ingest-telemetry",
+        batches,
+        device_token="test-device-token",
+    ) == (36, 0)
+    assert len(requests) == 6
+    for request, batch in zip(requests, batches, strict=True):
+        assert request.headers["x-device-token"] == "test-device-token"
+        assert request.headers["Idempotency-Key"] == str(batch.batch_id)
+
+
+def test_device_token_is_not_sent_over_plain_http() -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        upload_batches("http://example.com/ingest", [], device_token="test-device-token")
+
+
+def test_cloud_cli_keeps_simulated_runs_separate_from_real_devices(monkeypatch: object) -> None:
+    uploads = []
+
+    def capture(url, batches, *, device_token=None):
+        uploads.append((list(batches), device_token))
+        return 36, 0
+
+    monkeypatch.setattr(simulator, "load_dotenv", lambda path: None)
+    monkeypatch.setenv("DEVICE_INGEST_TOKEN", "test-device-token")
+    monkeypatch.setattr(simulator, "upload_batches", capture)
+    monkeypatch.setattr("sys.argv", ["simulator", "--url", "https://project.supabase.co"])
+
+    simulator.main()
+    simulator.main()
+
+    first, token = uploads[0]
+    second, _ = uploads[1]
+    identities = {reading.device_id for batch in first for reading in batch.readings}
+    assert len(identities) == 1
+    assert next(iter(identities)).startswith("sim-cloud-")
+    assert identities != {reading.device_id for batch in second for reading in batch.readings}
+    assert token == "test-device-token"
 

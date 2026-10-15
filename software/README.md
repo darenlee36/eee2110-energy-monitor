@@ -154,6 +154,17 @@ npx --yes supabase@2.117.0 functions deploy ingest-telemetry --use-api
 function still requires its private `x-device-token`, validates every reading, limits request
 size, and performs idempotent storage.
 
+To test the hosted ingestion endpoint before connecting hardware, save the same
+`DEVICE_INGEST_TOKEN` in the ignored `software/.env` file and run:
+
+```powershell
+.\.venv\Scripts\python.exe -m energy_monitor.simulator --scenario normal --url https://YOUR_PROJECT.supabase.co/functions/v1/ingest-telemetry
+```
+
+The uploader requires HTTPS when using a device token. Each token-authenticated test uses a
+unique `sim-cloud-` device ID so repeated tests cannot overwrite or collide with hardware
+sample sequences. These readings remain synthetic and must not be used as real training data.
+
 ## Firmware modes
 
 The default `esp32dev` environment uses deterministic simulated measurements. Copy
