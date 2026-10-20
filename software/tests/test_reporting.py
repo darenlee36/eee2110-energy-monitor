@@ -169,3 +169,70 @@ def test_manual_source_remains_entered_data(tmp_path):
     assert report.evidence_snapshot["cycles"][0]["record_source"] == "manual"
     assert "manual" in report.evidence_snapshot["totals_by_source"]
     assert "![unsafe]" not in report.report_text
+
+
+def test_report_history_survives_reopen_and_retry(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    report = make_report(store, cycle_id=ids[0])
+    report_id = store.save_report(report)
+    reopened = SQLiteTelemetryStore(store.database_path)
+    assert reopened.fetch_report(report_id) == report.model_dump(mode="json")
+    assert reopened.save_report(make_report(reopened, cycle_id=ids[0])) == report_id
+    history = reopened.fetch_reports("tefal-kettle", "monitor-001")
+    assert len(history) == 1
+    assert history[0]["generated_at"] == report.model_dump(mode="json")["generated_at"]
+    assert reopened.fetch_reports("tefal-kettle", "other") == []
+
+
+def test_changed_evidence_and_version_preserve_earlier_reports(tmp_path, monkeypatch):
+    store, ids = seeded_cycles(tmp_path)
+    first = make_report(store, cycle_id=ids[0])
+    store.save_report(first)
+    change_cycle(store, ids[0], meter_energy_kwh=0.2)
+    second = make_report(store, cycle_id=ids[0])
+    store.save_report(second)
+    module = importlib.import_module("energy_monitor.reporting")
+    monkeypatch.setattr(module, "REPORTING_VERSION", "cycle-report-template-v2-test")
+    third = make_report(store, cycle_id=ids[0])
+    store.save_report(third)
+    assert len({first.report_id, second.report_id, third.report_id}) == 3
+    assert len(store.fetch_reports("tefal-kettle", "monitor-001")) == 3
+    assert store.fetch_report(str(first.report_id)) == first.model_dump(mode="json")
+
+
+@pytest.mark.parametrize("tamper", ["text", "snapshot", "device"])
+def test_report_storage_rejects_tampered_drafts(tmp_path, tamper):
+    store, ids = seeded_cycles(tmp_path)
+    report = make_report(store, cycle_id=ids[0])
+    if tamper == "text":
+        report = report.model_copy(update={"report_text": "invented report"})
+    elif tamper == "device":
+        report = report.model_copy(update={"device_id": "other"})
+    else:
+        report.evidence_snapshot["model"]["status"] = "trained"
+    with pytest.raises(ValueError, match="evidence"):
+        store.save_report(report)
+    assert store.fetch_reports("tefal-kettle", "monitor-001") == []
+
+
+def test_missing_cycle_sweep_is_recoverable_and_idempotent(tmp_path):
+    store, ids = seeded_cycles(tmp_path, 5)
+    store.save_report(make_report(store, cycle_id=ids[0]))
+    module = importlib.import_module("energy_monitor.reporting")
+    assert module.generate_missing_reports(
+        store, profile_id="tefal-kettle", device_id="monitor-001"
+    ) == 4
+    assert module.generate_missing_reports(
+        store, profile_id="tefal-kettle", device_id="monitor-001"
+    ) == 0
+    assert len(store.fetch_reports("tefal-kettle", "monitor-001")) == 5
+    assert module.generate_missing_reports(
+        store, profile_id="tefal-kettle", device_id="other"
+    ) == 0
+
+
+@pytest.mark.parametrize("limit", [0, -1, 1001, True])
+def test_report_history_limit_is_bounded(tmp_path, limit):
+    store, _ = seeded_cycles(tmp_path)
+    with pytest.raises(ValueError, match="limit"):
+        store.fetch_reports("tefal-kettle", "monitor-001", limit=limit)

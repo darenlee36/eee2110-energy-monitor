@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from energy_monitor.reporting import ReportDraft
 
 from energy_monitor.cycles import detect_cycles
 from energy_monitor.models import (
@@ -43,6 +48,28 @@ class SQLiteTelemetryStore:
         with self._connect() as connection:
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS reports (
+                    report_id TEXT PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    kind TEXT NOT NULL CHECK (kind IN ('cycle', 'batch')),
+                    cycle_count INTEGER NOT NULL CHECK (
+                        (kind = 'cycle' AND cycle_count = 1) OR
+                        (kind = 'batch' AND cycle_count IN (5, 10, 20))
+                    ),
+                    period_start TEXT NOT NULL,
+                    period_end TEXT NOT NULL,
+                    generated_at TEXT NOT NULL,
+                    reporting_version TEXT NOT NULL,
+                    engine TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    evidence_hash TEXT NOT NULL,
+                    evidence_snapshot TEXT NOT NULL,
+                    report_text TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS reports_scope_generated_idx
+                    ON reports(profile_id, device_id, generated_at DESC, report_id DESC);
+
                 CREATE TABLE IF NOT EXISTS ingestion_batches (
                     batch_id TEXT PRIMARY KEY,
                     request_hash TEXT NOT NULL,
@@ -570,6 +597,61 @@ class SQLiteTelemetryStore:
         if volume is not None:
             cycles = [cycle for cycle in cycles if cycle["effective_volume"] == volume]
         return cycles[:limit]
+
+    def save_report(self, report: ReportDraft) -> str:
+        from energy_monitor.reporting import validate_report
+
+        parsed = validate_report(report)
+        values = parsed.model_dump(mode="json")
+        values["evidence_snapshot"] = json.dumps(values["evidence_snapshot"], allow_nan=False)
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO reports (
+                    report_id, profile_id, device_id, kind, cycle_count,
+                    period_start, period_end, generated_at, reporting_version,
+                    engine, status, evidence_hash, evidence_snapshot, report_text
+                ) VALUES (
+                    :report_id, :profile_id, :device_id, :kind, :cycle_count,
+                    :period_start, :period_end, :generated_at, :reporting_version,
+                    :engine, :status, :evidence_hash, :evidence_snapshot, :report_text
+                ) ON CONFLICT(report_id) DO NOTHING""",
+                values,
+            )
+        return str(parsed.report_id)
+
+    @staticmethod
+    def _report_from_row(row: sqlite3.Row) -> dict[str, object]:
+        from energy_monitor.reporting import validate_report
+
+        value = dict(row)
+        value["evidence_snapshot"] = json.loads(value["evidence_snapshot"])
+        return validate_report(value).model_dump(mode="json")
+
+    def fetch_report(self, report_id: str) -> dict[str, object] | None:
+        report_id = str(UUID(str(report_id)))
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM reports WHERE report_id = ?", (report_id,)
+            ).fetchone()
+        return None if row is None else self._report_from_row(row)
+
+    def fetch_reports(
+        self, profile_id: str, device_id: str, limit: int = 100
+    ) -> list[dict[str, object]]:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("report history limit must be between 1 and 1000")
+        if any(
+            not isinstance(v, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", v)
+            for v in (profile_id, device_id)
+        ):
+            raise ValueError("invalid report device/profile identifier")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM reports WHERE profile_id = ? AND device_id = ? "
+                "ORDER BY generated_at DESC, report_id DESC LIMIT ?",
+                (profile_id, device_id, limit),
+            ).fetchall()
+        return [self._report_from_row(row) for row in rows]
 
     def fetch_report_cycles(
         self, profile_id: str, device_id: str, limit: int | None = None

@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from energy_monitor.dashboard_queries import _monthly_usage_from_env, get_cycle_detail
 from energy_monitor.models import CycleSummary
@@ -24,17 +24,17 @@ class ReportDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     report_id: UUID
-    profile_id: str
-    device_id: str
+    profile_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    device_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     kind: Literal["cycle", "batch"]
-    cycle_count: int
-    period_start: datetime
-    period_end: datetime
-    generated_at: datetime
+    cycle_count: int = Field(strict=True)
+    period_start: AwareDatetime
+    period_end: AwareDatetime
+    generated_at: AwareDatetime
     reporting_version: str
     engine: Literal["template"] = "template"
     status: Literal["generated"] = "generated"
-    evidence_hash: str
+    evidence_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     evidence_snapshot: dict[str, object]
     report_text: str
 
@@ -138,6 +138,23 @@ def build_report(
     canonical = json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False)
     evidence_hash = hashlib.sha256(canonical.encode()).hexdigest()
     report_id = uuid5(NAMESPACE_URL, f"template:{REPORTING_VERSION}:{evidence_hash}")
+    return ReportDraft(
+        report_id=report_id, profile_id=profile_id, device_id=device_id, kind=kind,
+        cycle_count=cycle_count, period_start=period_start, period_end=period_end,
+        generated_at=datetime.now(UTC), reporting_version=REPORTING_VERSION,
+        evidence_hash=evidence_hash, evidence_snapshot=evidence,
+        report_text=render_report(evidence),
+    )
+
+
+def render_report(evidence: dict[str, object]) -> str:
+    """Render fixed text; user labels/notes are not interpreted as Markdown."""
+    cycle_count = evidence["cycle_count"]
+    profile_id, device_id = evidence["profile_id"], evidence["device_id"]
+    source_counts = evidence["source_counts"]
+    totals = evidence["totals_by_source"]
+    excluded = evidence["excluded_quality_count"]
+    limitations = evidence["limitations"]
     lines = [
         "# Energy Monitor report", "", f"Template report · {cycle_count} completed cycle(s)",
         f"Profile: {profile_id} · Device: {device_id}", "",
@@ -157,9 +174,60 @@ def build_report(
                 lines.append("  Charge total unavailable; some cycle charges cannot be estimated.")
     lines.extend(["", f"Cycles excluded from totals for quality errors: {excluded}.", ""])
     lines.extend(f"- {item}" for item in sorted(limitations))
-    return ReportDraft(
-        report_id=report_id, profile_id=profile_id, device_id=device_id, kind=kind,
-        cycle_count=cycle_count, period_start=period_start, period_end=period_end,
-        generated_at=datetime.now(UTC), reporting_version=REPORTING_VERSION,
-        evidence_hash=evidence_hash, evidence_snapshot=evidence, report_text="\n".join(lines),
-    )
+    return "\n".join(lines)
+
+
+def validate_report(report: ReportDraft | dict[str, object]) -> ReportDraft:
+    """Revalidate frozen copies and nested evidence before persistence or display."""
+    value = report.model_dump(mode="json") if isinstance(report, ReportDraft) else report
+    parsed = ReportDraft.model_validate(value)
+    evidence = parsed.evidence_snapshot
+    try:
+        canonical = json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        digest = hashlib.sha256(canonical.encode()).hexdigest()
+        expected_id = uuid5(
+            NAMESPACE_URL, f"{parsed.engine}:{parsed.reporting_version}:{digest}"
+        )
+        for name in ("profile_id", "device_id", "kind", "cycle_count", "reporting_version"):
+            if evidence[name] != getattr(parsed, name):
+                raise ValueError("report metadata differs from evidence")
+        for name in ("period_start", "period_end"):
+            if datetime.fromisoformat(evidence[name]) != getattr(parsed, name):
+                raise ValueError("report coverage differs from evidence")
+        counts = (1,) if parsed.kind == "cycle" else (5, 10, 20)
+        if parsed.cycle_count not in counts or len(evidence["cycles"]) != parsed.cycle_count:
+            raise ValueError("report cycle count differs from evidence")
+        cycle_ids = set()
+        for cycle in evidence["cycles"]:
+            if (
+                cycle["profile_id"] != parsed.profile_id
+                or cycle["device_id"] != parsed.device_id
+                or cycle["status"] != "completed"
+                or cycle["cycle_id"] in cycle_ids
+            ):
+                raise ValueError("report cycle scope differs from evidence")
+            cycle_ids.add(cycle["cycle_id"])
+        if parsed.period_end < parsed.period_start:
+            raise ValueError("report evidence coverage is reversed")
+        if (
+            digest != parsed.evidence_hash or expected_id != parsed.report_id
+            or parsed.report_text != render_report(evidence)
+        ):
+            raise ValueError("report text or identity differs from evidence")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("invalid report evidence") from exc
+    return parsed
+
+
+def generate_missing_reports(
+    store: SQLiteTelemetryStore, *, profile_id: str, device_id: str
+) -> int:
+    generated = 0
+    for cycle in reversed(store.fetch_report_cycles(profile_id, device_id)):
+        report = build_report(
+            store, profile_id=profile_id, device_id=device_id, cycle_id=str(cycle["cycle_id"])
+        )
+        if store.fetch_report(str(report.report_id)) is None:
+            store.save_report(report)
+            generated += 1
+    return generated
