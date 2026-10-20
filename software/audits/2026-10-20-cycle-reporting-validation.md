@@ -2,7 +2,10 @@
 
 Executed: 21 October 2026, Malaysia time. Product: Energy Monitor.
 Branch: `codex/cycle-first-kettle-dashboard`; calculation/storage/cloud/UI commits
-`ee93aa9`, `1e004f8`, `89e13b5`, `1ae0f6e`. Main and the hosted deployment were not changed.
+`ee93aa9`, `1e004f8`, `89e13b5`, `1ae0f6e`, reviewed fix `30d25a6`.
+The verified code is [pushed on the development branch](https://github.com/darenlee36/eee2110-energy-monitor/tree/codex/cycle-first-kettle-dashboard).
+Remote code HEAD matched `30d25a6fce0b22f849f60b6524138dbd42512fbd` after the push.
+Main remained `158d3d56e518ecfbfb492dfabf9b18949696cd64`; the hosted deployment was not changed.
 
 ## Scope delivered
 
@@ -32,7 +35,8 @@ Branch: `codex/cycle-first-kettle-dashboard`; calculation/storage/cloud/UI commi
   canonical-module model identity error. Canonical entry dispatch fixed it. Actual
   subprocess sweeps returned 5 new then 0; selected-cycle replay and exact batch also passed.
 - Final full regression after the review fix: **159 passed, 8 existing warnings in
-  39.91 seconds**. Full-tree Ruff: **all checks passed**.
+  39.91 seconds**. The final plan-closing gate repeated the full suite on the pushed
+  code: **159 passed, 8 existing warnings in 39.71 seconds**. Full-tree Ruff: **all checks passed**.
 - Independent read-only review found no critical issue and one important issue:
   readable reports omitted cycle-specific quality notes. Reproducing tests failed
   first; versioned v2 notes and plain-text legacy-v1 display then passed. Tests cover
@@ -120,3 +124,9 @@ labelled dataset and Isolation Forest evaluation remain pending.
 Next batch: manually validate Codex narrative generation/output checks; only then
 seek approval for a quota-bounded laptop reporting schedule. Public deployment and
 main merge require separate approval. The daily 10 AM software checker remains separate.
+
+The one-time 04:05 development continuation was deleted after its purpose was
+fulfilled. The independent daily software checker was verified ACTIVE at 10:00
+Malaysia time and was left unchanged. Final usage check: 27% five-hour and 69%
+weekly remaining; no 5% safeguard was crossed. No further implementation batch
+was started after this verified target.

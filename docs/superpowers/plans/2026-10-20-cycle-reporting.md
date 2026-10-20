@@ -117,3 +117,14 @@ User review is required before executing this plan. Recommended execution is nat
   dashboard; the documented software-directory run passed. No source workaround used.
 - One-time development continuation scheduled for 21 October 04:05 Malaysia time,
   after the verified 04:04:30 reset. Separate daily 10:00 checker remains active.
+- Final 21 October checkpoint: Tasks 1–5 completed for this reporting foundation.
+  SQLite/cloud immutable history, Reports view and one-shot worker are implemented.
+  Independent review's one important quality-warning issue was reproduced and fixed
+  with versioned template v2 and legacy-v1 compatibility; no critical/minor findings.
+  Final full gate: 159 tests passed, eight existing upstream warnings; Ruff clean.
+  Verified code 30d25a6 pushed only to codex/cycle-first-kettle-dashboard. Main and
+  public deployment remain unchanged. See software/audits/2026-10-20-cycle-reporting-validation.md
+  for remote permissions, real-browser evidence, decisions and limitations.
+  The one-time continuation is retired; the daily 10:00 checker remains active.
+  Overall software checklist stays 60%; Codex enhancement and a separately approved
+  quota-bounded product reporting schedule remain the next batch, not delivered AI.
