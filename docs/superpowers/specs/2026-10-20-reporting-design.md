@@ -1,6 +1,7 @@
 # Energy Monitor: laptop-first reporting design
 
-Date: 20 October 2026. Status: awaiting written-design review; not implemented.
+Date: 20 October 2026. Status: user approved the direction with cycle-based reporting;
+implementation plan review is next. Not implemented.
 
 ## Agreed intent and scope
 
@@ -26,8 +27,12 @@ This design implements the reporting role already described in
 
 ## Target for the first implementation batch
 
-A manual workflow generates a deterministic report from stored cycles, persists its
-evidence and text, and displays the saved report in a Reports dashboard section.
+Every completed cycle receives a deterministic individual report when the laptop
+reporting worker next processes it. Owners can additionally request summaries of
+the latest 5, 10 or 20 completed cycles from the same device/profile. These numbers
+are cycle counts, not seconds. A selected completed cycle can also be processed
+manually without waiting for the worker. Persist the evidence and text and display
+saved reports in a Reports dashboard section.
 The complete path must pass tests and a browser check. A template report must be
 identified as a template, not as AI-generated. Actual Codex generation and unattended
 scheduling follow this verified foundation in a separate batch.
@@ -52,17 +57,25 @@ is necessary for durable, cross-session history; no extra queue or job table is 
 
 ## Evidence contract
 
-Each report is scoped to one profile, one device and an explicit timezone-aware
-reporting window. Store UTC boundaries and display Malaysia time. Use a half-open
-window `[start, end)` with `end > start`. The user selects the window for manual
-generation; do not silently combine devices or all available history.
+Each report is scoped to one profile, one device and exact source cycle IDs. An
+individual report contains exactly one completed cycle. A batch contains exactly
+5, 10 or 20 completed cycles; if fewer exist, show the available count and do not
+silently create a smaller batch. Select batches by end time descending, with cycle
+ID as a stable tie-breaker, and display evidence chronologically. Never group
+different devices/profiles. Show provenance separately even within the same batch.
+
+Derive the reporting period from the earliest selected start and latest selected
+end. These are coverage metadata, not an additional arbitrary time-window selector.
+Store UTC and display Malaysia time. Do not add a calendar/time-window reporting
+mode to this first batch.
 
 The evidence snapshot includes reporting version, source cycle IDs, device/profile,
 window, data-origin and record-source counts, completed/active/incomplete and quality
 counts, eligible energy totals, qualified tariff estimates and limitations.
 
-- Include a completed cycle in totals only if its start and end lie within the window.
-  Count overlapping or unfinished cycles separately and explain their exclusion.
+- Never include active or incomplete cycles in a completed-cycle report or batch.
+  Keep quality warnings on selected completed cycles visible; exclude cycles with
+  invalid or missing readings/gaps from energy and cost totals and explain why.
 - Keep simulated, sensor, manual, mixed and unknown sources distinguishable. Never
   present a combined total as verified sensor consumption. Manual values are entered
   values, not measurements recovered from raw telemetry.
@@ -77,7 +90,8 @@ counts, eligible energy totals, qualified tariff estimates and limitations.
 
 ## Persistence and access
 
-Persist report ID, profile/device, reporting window, generated time, reporting version,
+Persist report ID, profile/device, kind (`cycle` or `batch`), requested cycle count,
+coverage period, generated time, reporting version,
 engine (`template` initially, `codex` later), status, canonical evidence hash, evidence
 snapshot and report text. Keep enough snapshot detail to reproduce every displayed
 number even if labels, tariffs or later data change.
@@ -98,9 +112,12 @@ only to generation/editing, not to opening the dashboard. No public AI spending 
 
 ## Dashboard behaviour
 
-Add Reports beside Live and Cycles. List saved reports with period, generation time,
+Add Reports beside Live and Cycles. List saved reports with kind/count, period, generation time,
 source, engine and status. Opening a report shows its text, limitations and inspectable
-evidence. Clearly identify template fallback and simulated data.
+evidence. Clearly identify template fallback and simulated data. Owners can select
+a completed cycle or choose a 5/10/20-cycle batch. Public visitors cannot start report
+generation. Laptop worker scans for completed cycles without a matching report and
+generates missing reports; it must not depend on a browser session staying open.
 
 Show explicit empty-history, cloud-unavailable and validation-error states. Continue
 showing an available cached report with a cache warning when cloud access fails.
@@ -117,14 +134,20 @@ error status plus the deterministic fallback. Do not claim this design guarantee
 that an LLM never makes mistakes.
 
 Test one manual Codex run before creating a reporting schedule. Confirm cadence and
-reporting window before scheduling. Keep this separate from the existing 10:00 AM
+maximum AI calls per run before scheduling. Keep this separate from the existing 10:00 AM
 software-progress checker. Observe account usage and the user's 5% remaining cutoff;
 do not create an unrestricted recurring AI workload.
 
+Every completed cycle gets its numerical/template report regardless of AI quota.
+Codex enhancement may be pending, unavailable or failed without blocking that report.
+Batch summaries reuse saved evidence and do not request regeneration of constituent
+AI reports. Keep a per-snapshot/version completion marker so unchanged evidence is
+not repeatedly sent to Codex. Unlimited per-cycle AI calls are not part of this design.
+
 ## Acceptance and verification
 
-1. Deterministic tests cover populated, empty, incomplete, boundary-crossing,
-   mixed-device, provenance and untrained-model cases. Numbers and warnings trace
+1. Deterministic tests cover individual reports, exact 5/10/20 batches, insufficient
+   history, stable ordering, incomplete cycles, mixed-device, provenance and untrained-model cases. Numbers and warnings trace
    to saved source evidence; repeated inputs produce identical canonical evidence.
 2. SQLite persistence/reopen and duplicate-generation tests pass. Cloud tests verify
    report durability and rejection of client-role writes without mutating telemetry.
@@ -138,7 +161,7 @@ do not create an unrestricted recurring AI workload.
 
 ## Review and execution gate
 
-This document needs user review before an implementation plan is written. The
-implementation plan must then be reviewed and executed in this existing chat unless
+The user's cycle-based amendment is incorporated here. The implementation plan
+must be reviewed and executed in this existing chat unless
 the user chooses another method. No product code, database migration, new automation
 or external API billing has been changed while preparing this design.
