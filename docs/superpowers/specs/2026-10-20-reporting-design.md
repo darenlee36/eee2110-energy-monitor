@@ -1,7 +1,7 @@
 # Energy Monitor: laptop-first reporting design
 
-Date: 20 October 2026. Status: user approved the direction with cycle-based reporting;
-implementation plan review is next. Not implemented.
+Date: 20 October 2026. Status: cycle-based design and implementation plan approved
+on 21 October; implementation is underway. See the plan checkpoints for verified scope.
 
 ## Agreed intent and scope
 

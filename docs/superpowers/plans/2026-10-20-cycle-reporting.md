@@ -102,3 +102,18 @@ All commands below run from `software/` in the existing worktree. Use its `.venv
 ## Review gate
 
 User review is required before executing this plan. Recommended execution is native in this existing chat, task-by-task, with checks after every task and no parallel agents. Do not reopen the agreed laptop-first or cycle-count decisions. If review identifies a missing runtime or permission decision, ask only that question in this chat.
+
+## Execution checkpoints
+
+- User approved execution on 21 October 2026 in this chat.
+- Task 1 implemented: individual and exact 5/10/20-cycle template report calculations,
+  scoped selection, evidence snapshots, stable IDs, source-separated totals and
+  quality/tariff/untrained-model warnings. Seventeen new tests first failed for the
+  absent feature; 24 focused reporting/query tests then passed. Full regression:
+  128 passed with eight existing upstream deprecation warnings. Changed Python
+  files passed Ruff. Report persistence, cloud table, Reports UI and worker are
+  still pending; no AI generation or product reporting schedule is enabled.
+- Baseline before changes: 111 passed. Root-directory invocation failed to import
+  dashboard; the documented software-directory run passed. No source workaround used.
+- One-time development continuation scheduled for 21 October 04:05 Malaysia time,
+  after the verified 04:04:30 reset. Separate daily 10:00 checker remains active.

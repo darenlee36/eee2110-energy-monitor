@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from collections import defaultdict
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -569,6 +570,24 @@ class SQLiteTelemetryStore:
         if volume is not None:
             cycles = [cycle for cycle in cycles if cycle["effective_volume"] == volume]
         return cycles[:limit]
+
+    def fetch_report_cycles(
+        self, profile_id: str, device_id: str, limit: int | None = None
+    ) -> list[dict[str, object]]:
+        if limit is not None and (type(limit) is not int or limit < 1):
+            raise ValueError("report cycle limit must be a positive integer")
+        parameters: tuple[object, ...] = (profile_id, device_id)
+        query = (
+            "SELECT cycle_id FROM appliance_cycles WHERE profile_id = ? AND device_id = ? "
+            "AND status = 'completed' AND ended_at IS NOT NULL "
+            "ORDER BY julianday(ended_at) DESC, cycle_id DESC"
+        )
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters += (limit,)
+        with closing(self._connect()) as connection:
+            ids = connection.execute(query, parameters).fetchall()
+        return [cycle for row in ids if (cycle := self.fetch_cycle(row[0])) is not None]
 
     def fetch_cycle(self, cycle_id: UUID | str) -> dict[str, object] | None:
         with self._connect() as connection:
