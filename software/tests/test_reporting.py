@@ -1,5 +1,7 @@
 import importlib
 import json
+import subprocess
+import sys
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -236,3 +238,88 @@ def test_report_history_limit_is_bounded(tmp_path, limit):
     store, _ = seeded_cycles(tmp_path)
     with pytest.raises(ValueError, match="limit"):
         store.fetch_reports("tefal-kettle", "monitor-001", limit=limit)
+
+
+def test_report_history_is_viewable_without_raw_cycles(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    report = make_report(store, cycle_id=ids[0])
+    store.save_report(report)
+    with closing(store._connect()) as connection, connection:
+        connection.execute("DELETE FROM appliance_cycles")
+    assert store.fetch_reports() == [report.model_dump(mode="json")]
+    with pytest.raises(ValueError, match="scope"):
+        store.fetch_reports(profile_id="tefal-kettle")
+
+
+def test_cli_generates_missing_reports_and_replays(tmp_path, monkeypatch, capsys):
+    store, _ = seeded_cycles(tmp_path, 5)
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
+    module = importlib.import_module("energy_monitor.reporting")
+    args = ["--database", str(store.database_path), "--profile-id", "tefal-kettle",
+            "--device-id", "monitor-001", "--generate-missing"]
+    assert module.main(args) == 0
+    assert "5 new" in capsys.readouterr().out
+    assert module.main(args) == 0
+    assert "0 new" in capsys.readouterr().out
+    assert len(store.fetch_reports()) == 5
+
+
+@pytest.mark.parametrize("args", [[], ["--cycle-count", "2"],
+    ["--cycle-count", "5", "--generate-missing"],
+    ["--cycle-id", "invalid", "--cycle-count", "5"]])
+def test_cli_rejects_invalid_argument_combinations(args):
+    module = importlib.import_module("energy_monitor.reporting")
+    with pytest.raises(SystemExit) as error:
+        module.main(["--profile-id", "tefal-kettle", "--device-id", "monitor-001", *args])
+    assert error.value.code == 2
+
+
+def test_cli_cloud_syncs_all_pages_before_generating(tmp_path, monkeypatch, capsys):
+    import energy_monitor.cloud_edits as cloud
+    import energy_monitor.supabase_sync as sync
+
+    store, _ = seeded_cycles(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "private-test-key")
+    events = []
+
+    def sync_page(cache, config):
+        events.append("sync")
+        # A page can advance the cursor while importing only duplicate telemetry.
+        if len(events) == 1:
+            cache.save_cloud_sync_cursor(config.url, "2026-10-01T00:00:00+00:00", str(UUID(int=1)))
+        return 0
+
+    monkeypatch.setattr(sync, "sync_supabase_telemetry", sync_page)
+    monkeypatch.setattr(cloud.SupabaseCycleStore, "refresh_edits", lambda s: events.append("edits"))
+    monkeypatch.setattr(cloud.SupabaseCycleStore, "fetch_report", lambda *a: None)
+
+    def save(cache, report):
+        assert cache.can_edit
+        events.append("save")
+        return SQLiteTelemetryStore.save_report(cache, report)
+
+    monkeypatch.setattr(cloud.SupabaseCycleStore, "save_report", save)
+    module = importlib.import_module("energy_monitor.reporting")
+    assert module.main(["--database", str(store.database_path), "--profile-id", "tefal-kettle",
+                        "--device-id", "monitor-001", "--generate-missing"]) == 0
+    assert events == ["sync", "sync", "edits", "save"]
+    assert "private-test-key" not in str(capsys.readouterr())
+
+
+def test_module_worker_is_duplicate_safe_without_a_browser(tmp_path, monkeypatch):
+    store, ids = seeded_cycles(tmp_path, 5)
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
+    command = [sys.executable, "-m", "energy_monitor.reporting", "--database",
+               str(store.database_path), "--profile-id", "tefal-kettle", "--device-id",
+               "monitor-001"]
+    for expected in ("5 new", "0 new"):
+        result = subprocess.run([*command, "--generate-missing"], capture_output=True,
+                                text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert expected in result.stdout
+    for action in (["--cycle-id", ids[0]], ["--cycle-count", "5"]):
+        result = subprocess.run([*command, *action], capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+    assert len(store.fetch_reports()) == 6

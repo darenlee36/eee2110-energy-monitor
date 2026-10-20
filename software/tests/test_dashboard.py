@@ -160,7 +160,7 @@ def test_dashboard_exposes_live_and_cycles_modes(
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
 
     assert not app.exception
-    assert app.segmented_control[0].options == ["Live", "Cycles"]
+    assert app.segmented_control[0].options == ["Live", "Cycles", "Reports"]
     assert any(toggle.label == "Auto-refresh every 5 seconds" for toggle in app.toggle)
 
 
@@ -369,3 +369,73 @@ def test_neon_theme_is_local_responsive_and_motion_safe() -> None:
     assert "url(" not in css.lower()
     assert 'base = "dark"' in config
     assert 'primaryColor = "#3BD7FF"' in config
+
+
+def test_reports_empty_history_and_no_generation_on_refresh(tmp_path, monkeypatch):
+    database = build_dashboard_cycle_database(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert any("No saved reports" in i.value for i in app.info)
+    assert next(s for s in app.selectbox if s.label == "Batch size (cycles)").options == [
+        "5", "10", "20"
+    ]
+    next(b for b in app.button if b.label == "Refresh now").click().run()
+    assert SQLiteTelemetryStore(database).fetch_reports() == []
+    next(b for b in app.button if b.label == "Generate batch report").click().run()
+    assert any("1 of 5" in e.value for e in app.error)
+    assert SQLiteTelemetryStore(database).fetch_reports() == []
+
+
+def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypatch):
+    database = build_dashboard_cycle_database(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    next(b for b in app.button if b.label == "Generate cycle report").click().run()
+    assert not app.exception
+    assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
+    assert any("Source: simulated" in c.value for c in app.caption)
+    assert any("Engine: template" in c.value for c in app.caption)
+    assert any("not trained" in m.value for m in app.markdown)
+    assert app.json
+    next(b for b in app.button if b.label == "Generate cycle report").click().run()
+    assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
+
+
+def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypatch):
+    from energy_monitor.cloud_edits import SupabaseCycleStore
+    from energy_monitor.reporting import build_report
+    from energy_monitor.supabase_sync import SupabaseSyncError
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    cycle = store.fetch_cycles()[0]
+    store.save_report(build_report(store, profile_id=cycle["profile_id"],
+        device_id=cycle["device_id"], cycle_id=cycle["cycle_id"]))
+    # Saved reports must remain viewable without their analytical cycle cache.
+    with store._connect() as connection, connection:
+        connection.execute("DELETE FROM appliance_cycles")
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-server-key")
+    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    monkeypatch.setattr(SupabaseCycleStore, "refresh_edits", lambda s: None)
+    monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
+    def unavailable(*args, **kwargs):
+        raise SupabaseSyncError("Cloud unavailable")
+    monkeypatch.setattr(SupabaseCycleStore, "fetch_reports", unavailable)
+    monkeypatch.setattr(SupabaseCycleStore, "save_report",
+                        lambda *a: pytest.fail("Public report generation"))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert any("cached reports" in w.value for w in app.warning)
+    assert any("Engine: template" in c.value for c in app.caption)
+    assert not any(b.label.startswith("Generate") for b in app.button)
+    assert app.json

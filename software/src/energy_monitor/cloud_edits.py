@@ -92,19 +92,23 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
         return rows[0] if rows else None
 
     def fetch_reports(
-        self, profile_id: str, device_id: str, limit: int = 100
+        self, profile_id: str | None = None, device_id: str | None = None, limit: int = 100
     ) -> list[dict[str, object]]:
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("report history limit must be between 1 and 1000")
-        if any(
+        if (profile_id is None) != (device_id is None):
+            raise ValueError("report scope requires both device and profile")
+        if profile_id is not None and any(
             not isinstance(v, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", v)
             for v in (profile_id, device_id)
         ):
             raise ValueError("invalid report device/profile identifier")
-        return self._read_reports({
-            "profile_id": "eq." + profile_id, "device_id": "eq." + device_id,
+        params = {
             "order": "generated_at.desc,report_id.desc", "limit": str(limit),
-        })
+        }
+        if profile_id is not None:
+            params.update(profile_id="eq." + profile_id, device_id="eq." + device_id)
+        return self._read_reports(params)
 
     def refresh_edits(self) -> None:
         state = self._rpc("dashboard_edit_state", {})

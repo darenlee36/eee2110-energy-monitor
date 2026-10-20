@@ -211,6 +211,46 @@ optional because the PZEM does not provide it.
 - When the queue is full, new samples are deferred until delivery resumes. Flash-backed telemetry
   buffering can be added later if field testing requires outages longer than ten minutes.
 
+## Cycle reports and one-shot laptop worker
+
+Use **Reports** beside Live and Cycles to view immutable evidence snapshots. Each report
+identifies its device/profile, exact cycle count, Malaysia-time coverage, origin, template
+engine, tariff limitations and not-trained/not-evaluated model status. History shows the
+latest 100 reports per selected device/profile; initial discovery uses the latest 100
+reports across devices plus completed cycles already in the cache. Saved reports remain
+viewable without the underlying analytical cycles. A cloud outage shows cached history
+with an explicit warning, not a claim that the cache is current or complete.
+
+Owner controls unlock **Generate cycle report** and exact **5, 10 or 20-cycle** summaries.
+The count means cycles, not seconds. Insufficient history shows the available count and
+does not silently make a smaller batch. Refreshing or opening Reports never generates a
+report. Public cloud visitors can view saved history without logging in, but cannot
+generate reports. Local development mode is trusted and allows generation.
+
+Run the one-shot worker from this software directory, using the private existing .env:
+
+```powershell
+.\.venv\Scripts\python.exe -m energy_monitor.reporting --profile-id tefal-kettle --device-id YOUR_DEVICE --generate-missing
+.\.venv\Scripts\python.exe -m energy_monitor.reporting --profile-id tefal-kettle --device-id YOUR_DEVICE --cycle-id COMPLETED_CYCLE_UUID
+.\.venv\Scripts\python.exe -m energy_monitor.reporting --profile-id tefal-kettle --device-id YOUR_DEVICE --cycle-count 5
+```
+
+The worker uses ENERGY_MONITOR_SOURCE and ENERGY_MONITOR_DB like the dashboard. Optional
+`--source local|supabase|auto` and `--database PATH` override them. In Supabase mode it imports
+all currently available pages into the analytical cache, restores cloud edits, then builds
+reports. Failure returns a nonzero exit code; cloud save is not called successful without
+server confirmation. Repeat the same command safely: identical evidence/version reuses
+the saved ID; changed evidence/version preserves an additional snapshot rather than
+overwriting history. The additive cycle_report_history migration grants server-only
+SELECT/INSERT; anonymous/authenticated clients cannot access the reports table directly.
+
+The worker runs once and exits. It does **not** run inside a browser session, start a timer,
+or generate reports while the laptop is off. Re-running `--generate-missing` catches up
+completed cycles. This is numerical/template reporting, **not AI-generated reporting**.
+No paid API, Codex enhancement, or product reporting schedule is enabled. Those require
+a later manual validation and quota/cadence decision. Simulated and manual cycles are
+development evidence only, never real-sensor or model-training validation.
+
 ## Deferred work
 
 Water-volume model training, Isolation Forest validation, agentic reporting,

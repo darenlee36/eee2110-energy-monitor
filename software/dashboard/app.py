@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from components import (
@@ -27,6 +28,7 @@ from dotenv import load_dotenv
 from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.dashboard_queries import get_cycle_detail, get_live_view, list_cycle_items
 from energy_monitor.models import CycleDetectionSettings, CycleStatus
+from energy_monitor.reporting import build_report
 from energy_monitor.simulator import batch_readings, generate_readings
 from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.supabase_sync import (
@@ -169,6 +171,109 @@ def sync_cloud_source() -> None:
     except ValueError:
         st.warning("Cloud edits unavailable. Showing locally cached records.")
 
+
+def render_reports() -> None:
+    st.header("Reports")
+    st.caption("Saved cycle evidence · template engine · no AI calls or reporting schedule enabled")
+
+    def history(profile=None, device=None):
+        try:
+            return store.fetch_reports(profile, device)
+        except SupabaseSyncError:
+            st.warning(
+                "Cloud history unavailable. Showing cached reports; history may be incomplete."
+            )
+            return SQLiteTelemetryStore.fetch_reports(store, profile, device)
+
+    def malaysia_time(value: str) -> str:
+        return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Kuala_Lumpur")).strftime(
+            "%d %b %Y, %H:%M:%S"
+        )
+
+    try:
+        recent = history()
+        completed = [c for c in store.fetch_cycles() if c["status"] == "completed"]
+        pairs = sorted({(r["profile_id"], r["device_id"]) for r in [*recent, *completed]})
+        st.caption(
+            "History: latest 100 reports per selected device/profile. Times use Malaysia time."
+        )
+        if not pairs:
+            st.info(
+                "No saved reports or completed cycles yet. "
+                "Run the laptop worker after cycles arrive."
+            )
+            return
+        profile, device = st.selectbox(
+            "Report device / profile", pairs, format_func=lambda p: f"{p[1]} / {p[0]}"
+        )
+        cycles = store.fetch_report_cycles(profile, device)
+        selected_report = None
+        if can_edit and cycles:
+            with st.expander("Generate template report", expanded=True):
+                st.caption(
+                    "Generate explicitly. Refreshing or opening Reports never generates reports."
+                )
+                cycle_by_id = {c["cycle_id"]: c for c in cycles}
+                cycle_id = st.selectbox(
+                    "Completed cycle", list(cycle_by_id), format_func=lambda cid:
+                    f"{malaysia_time(cycle_by_id[cid]['started_at'])} · {cid[-8:]}")
+                count = st.selectbox("Batch size (cycles)", [5, 10, 20])
+                individual = st.button("Generate cycle report")
+                batch = st.button("Generate batch report")
+                if individual or batch:
+                    try:
+                        draft = build_report(
+                            store, profile_id=profile, device_id=device,
+                            cycle_id=cycle_id if individual else None,
+                            cycle_count=1 if individual else count,
+                        )
+                        selected_report = store.save_report(draft)
+                        st.success(
+                            "Template report saved (identical retries reuse the saved report)."
+                        )
+                    except SupabaseSyncError:
+                        st.error(
+                            "Cloud save not confirmed. Retry safely; duplicates are prevented."
+                        )
+                    except ValueError as exc:
+                        st.error(str(exc))
+        elif not can_edit:
+            st.caption(
+                "Viewing saved reports only. "
+                "Owner controls unlock generation; viewing stays public."
+            )
+        reports = history(profile, device)
+        if not reports:
+            st.info(
+                "No saved reports for this device/profile. Generate one or run the laptop worker."
+            )
+            return
+        by_id = {r["report_id"]: r for r in reports}
+        if selected_report in by_id:
+            st.session_state.report_history_id = selected_report
+        if st.session_state.get("report_history_id") not in by_id:
+            st.session_state.report_history_id = reports[0]["report_id"]
+        report_id = st.selectbox("Saved report", list(by_id), key="report_history_id",
+            format_func=lambda rid: (
+                f"{by_id[rid]['kind'].title()} · {by_id[rid]['cycle_count']} cycle(s) · "
+                f"{malaysia_time(by_id[rid]['generated_at'])} · {rid[-8:]}"
+            ))
+        report = by_id[report_id]
+        sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
+        st.caption(f"Source: {sources} · Engine: {report['engine']} · Status: {report['status']}")
+        st.caption(f"Coverage: {malaysia_time(report['period_start'])} – "
+                   f"{malaysia_time(report['period_end'])} MYT")
+        st.markdown(
+            report["report_text"].replace("# Energy Monitor report", "### Cycle report")
+            .replace("## Evidence and qualified totals", "#### Evidence and qualified totals")
+        )
+        with st.expander("Inspect saved evidence"):
+            st.caption(f"Report {report_id} · Version {report['reporting_version']} · "
+                       f"SHA-256 {report['evidence_hash']}")
+            st.json(report["evidence_snapshot"])
+    except ValueError:
+        st.error("Report validation failed. Invalid history was not displayed.")
+
 st.title("Energy Monitor")
 st.caption("Live electrical telemetry · automatic load-cycle detection · usage insights")
 if use_demo:
@@ -186,7 +291,7 @@ controls = st.columns([2, 2, 1])
 with controls[0]:
     st.segmented_control(
         "Dashboard mode",
-        ["Live", "Cycles"],
+        ["Live", "Cycles", "Reports"],
         key="mode",
         label_visibility="collapsed",
     )
@@ -210,7 +315,7 @@ if st.session_state.mode == "Live":
         render_live_state(view)
 
     live_panel()
-else:
+elif st.session_state.mode == "Cycles":
     sync_cloud_source()
     live_status = get_live_view(store, dashboard_now())
     st.markdown(
@@ -265,6 +370,9 @@ else:
             detail.tariff_estimate,
             detail.energy_label,
         )
+else:
+    sync_cloud_source()
+    render_reports()
 
 st.caption(
     "Unusual behaviour means different from the recorded baseline; "

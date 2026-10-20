@@ -180,3 +180,18 @@ def test_cloud_report_scope_mismatch_is_rejected(tmp_path, monkeypatch):
     ))
     with pytest.raises(SupabaseSyncError):
         store.fetch_reports("tefal-kettle", "another-device")
+
+
+def test_cloud_report_history_can_discover_saved_reports(tmp_path, monkeypatch):
+    report = report_fixture(tmp_path)
+    def get(url, **kwargs):
+        assert "profile_id" not in kwargs["params"]
+        assert "device_id" not in kwargs["params"]
+        assert kwargs["params"]["limit"] == "100"
+        return httpx.Response(200, json=[report.model_dump(mode="json")],
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx, "get", get)
+    store = SupabaseCycleStore(tmp_path / "report-discovery.db", CONFIG)
+    assert store.fetch_reports() == [report.model_dump(mode="json")]
+    with pytest.raises(ValueError, match="scope"):
+        store.fetch_reports(device_id="monitor-001")

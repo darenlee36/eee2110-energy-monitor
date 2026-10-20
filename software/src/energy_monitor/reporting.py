@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import sys
 from collections import Counter
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -231,3 +234,76 @@ def generate_missing_reports(
             store.save_report(report)
             generated += 1
     return generated
+
+
+def main(argv: list[str] | None = None) -> int:
+    """One-shot trusted laptop worker; never schedules work or calls an AI API."""
+    import argparse
+
+    from dotenv import load_dotenv
+
+    from energy_monitor.cloud_edits import SupabaseCycleStore
+    from energy_monitor.supabase_sync import (
+        SupabaseConfig,
+        SupabaseSyncError,
+        sync_supabase_telemetry,
+    )
+
+    parser = argparse.ArgumentParser(description="Generate evidence-backed template reports")
+    parser.add_argument("--profile-id", required=True)
+    parser.add_argument("--device-id", required=True)
+    parser.add_argument("--database", type=Path)
+    parser.add_argument("--source", choices=("local", "supabase", "auto"))
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--generate-missing", action="store_true")
+    action.add_argument("--cycle-id", type=UUID)
+    action.add_argument("--cycle-count", type=int, choices=(5, 10, 20))
+    args = parser.parse_args(argv)
+    root = Path(__file__).parents[2]
+    load_dotenv(root / ".env")
+    mode = args.source or os.environ.get("ENERGY_MONITOR_SOURCE", "auto").strip().lower()
+    if mode not in ("auto", "local", "demo", "supabase"):
+        parser.error("invalid source mode")
+    config = SupabaseConfig.from_environment()
+    cloud = mode == "supabase" or (mode == "auto" and config is not None)
+    if cloud and config is None:
+        print("Cloud credentials missing; no reports generated.", file=sys.stderr)
+        return 1
+    default = root / "data" / ("supabase-cache.db" if cloud else "telemetry.db")
+    database = args.database or Path(os.environ.get("ENERGY_MONITOR_DB", default))
+    try:
+        store = (
+            SupabaseCycleStore(database, config, can_edit=True)
+            if cloud else SQLiteTelemetryStore(database)
+        )
+        if cloud:
+            while True:
+                before = store.cloud_sync_cursor(config.url)
+                sync_supabase_telemetry(store, config)
+                if store.cloud_sync_cursor(config.url) == before:
+                    break
+            store.refresh_edits()
+        if args.generate_missing:
+            count = generate_missing_reports(
+                store, profile_id=args.profile_id, device_id=args.device_id
+            )
+            print(f"{count} new individual template report(s) confirmed.")
+        else:
+            report = build_report(
+                store, profile_id=args.profile_id, device_id=args.device_id,
+                cycle_id=str(args.cycle_id) if args.cycle_id else None,
+                cycle_count=args.cycle_count or 1,
+            )
+            print(f"Template report confirmed: {store.save_report(report)}")
+        return 0
+    except (SupabaseSyncError, OSError, ValueError):
+        print("Report generation failed; no new save is confirmed. Check data and cloud access; "
+              "retry is duplicate-safe.", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    # Use the canonical module's model class at the storage validation boundary.
+    from energy_monitor.reporting import main as run_main
+
+    raise SystemExit(run_main())

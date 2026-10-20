@@ -636,20 +636,24 @@ class SQLiteTelemetryStore:
         return None if row is None else self._report_from_row(row)
 
     def fetch_reports(
-        self, profile_id: str, device_id: str, limit: int = 100
+        self, profile_id: str | None = None, device_id: str | None = None, limit: int = 100
     ) -> list[dict[str, object]]:
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("report history limit must be between 1 and 1000")
-        if any(
+        if (profile_id is None) != (device_id is None):
+            raise ValueError("report scope requires both device and profile")
+        if profile_id is not None and any(
             not isinstance(v, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", v)
             for v in (profile_id, device_id)
         ):
             raise ValueError("invalid report device/profile identifier")
+        scope = " WHERE profile_id = ? AND device_id = ?" if profile_id is not None else ""
+        parameters = (profile_id, device_id, limit) if scope else (limit,)
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                "SELECT * FROM reports WHERE profile_id = ? AND device_id = ? "
+                "SELECT * FROM reports" + scope + " "
                 "ORDER BY generated_at DESC, report_id DESC LIMIT ?",
-                (profile_id, device_id, limit),
+                parameters,
             ).fetchall()
         return [self._report_from_row(row) for row in rows]
 
