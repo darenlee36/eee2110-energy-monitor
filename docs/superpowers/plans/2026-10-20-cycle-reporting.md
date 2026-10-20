@@ -36,7 +36,7 @@
 - Create `software/src/energy_monitor/reporting.py`: report draft model, deterministic evidence/rendering, missing-cycle runner and module entry point.
 - Modify `software/src/energy_monitor/storage.py`: scoped completed-cycle queries and SQLite report history.
 - Modify `software/src/energy_monitor/cloud_edits.py`: cloud-backed report history on the existing store, preserving its owner gate.
-- Create `software/supabase/migrations/202610200001_reports.sql`: only the new reports table, constraints, RLS and server grants.
+- Create `software/supabase/migrations/20261020201336_cycle_report_history.sql`: only the new reports table, constraints, RLS and server grants.
 - Modify `software/dashboard/app.py`: Reports navigation and existing-style controls; no CSS redesign.
 - Create `software/tests/test_reporting.py`; extend `software/tests/test_cloud_edits.py` and `software/tests/test_dashboard.py`.
 - Update `software/README.md` and a new reporting audit after verification.
@@ -70,7 +70,7 @@ All commands below run from `software/` in the existing worktree. Use its `.venv
 
 ## Task 3: Cloud persistence without new public write access
 
-**Files:** migration 202610200001_reports.sql, cloud_edits.py, tests/test_cloud_edits.py, tests/test_reporting.py.
+**Files:** migration 20261020201336_cycle_report_history.sql, cloud_edits.py, tests/test_cloud_edits.py, tests/test_reporting.py.
 
 **Interfaces:** SupabaseCycleStore overrides the same save/fetch report methods. Cloud is authoritative; cache a validated returned report locally after confirmed success. Cloud failures raise SupabaseSyncError. For reads only, the UI catches this error, explicitly calls the SQLite base implementation and displays a cache warning. Generation never reports a cloud save as confirmed on failure. Keep saved field names identical across the two stores.
 
