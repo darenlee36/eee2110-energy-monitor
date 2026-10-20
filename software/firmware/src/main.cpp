@@ -56,9 +56,9 @@ constexpr std::uint64_t kSequenceBlockSize = 1000000;
 constexpr std::size_t kBatchSize = 6;
 constexpr std::size_t kQueueCapacity = 120;
 #if TELEMETRY_SIMULATED
-constexpr char kFirmwareVersion[] = "sim-fw-0.2.1";
+constexpr char kFirmwareVersion[] = "sim-fw-0.2.2";
 #else
-constexpr char kFirmwareVersion[] = "pzem-fw-0.2.1";
+constexpr char kFirmwareVersion[] = "pzem-fw-0.2.2";
 #endif
 
 TelemetryQueue<kQueueCapacity> queue;
@@ -207,6 +207,23 @@ void setup() {
   Serial.begin(115200);
   const bool sequenceReady = reserveSequenceBlock();
   const bool readerReady = reader.begin();
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      Serial.printf("WiFi disconnect reason=%u\n", info.wifi_sta_disconnected.reason);
+    } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+      Serial.println("WiFi connected; IP assigned.");
+    }
+  });
+  if (configurationIsReady()) {
+    WiFi.mode(WIFI_STA);
+    const int networks = WiFi.scanNetworks();
+    bool found = false;
+    for (int index = 0; index < networks; ++index) {
+      if (WiFi.SSID(index) == WIFI_SSID) found = true;
+    }
+    Serial.printf("Hotspot scan: networks=%d saved network=%s\n", networks, found ? "found" : "not found");
+    WiFi.scanDelete();
+  }
   connectWifi();
   lastReconnectMs = millis();
   Serial.println(TELEMETRY_SIMULATED ? "Simulated telemetry reader" : "PZEM telemetry reader");

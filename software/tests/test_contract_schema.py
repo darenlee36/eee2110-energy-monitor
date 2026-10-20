@@ -33,6 +33,17 @@ def test_firmware_upload_requires_verified_https():
     )
 
 
+def test_firmware_wifi_diagnostics_do_not_print_credentials():
+    source = (SCHEMA_PATH.parents[1] / "firmware/src/main.cpp").read_text(encoding="utf-8")
+    assert "Hotspot scan:" in source
+    assert "WiFi disconnect reason=%u" in source
+    for line in source.splitlines():
+        if "Serial." in line:
+            assert "WIFI_PASSWORD" not in line
+            assert "WIFI_SSID" not in line
+            assert "DEVICE_INGEST_TOKEN" not in line
+
+
 def test_json_schema_accepts_the_reference_batch() -> None:
     payload = make_payload("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
 
