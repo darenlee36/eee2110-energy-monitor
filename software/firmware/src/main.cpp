@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <esp_system.h>
 #include <time.h>
 
@@ -32,6 +33,22 @@ PzemReader reader(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 #include "telemetry_queue.h"
 
 namespace {
+// GTS Root R4 from https://pki.goog/repo/certs/gtsr4.pem; expires 2036-06-22.
+// Recheck the endpoint chain when its CA changes; never fall back to insecure TLS.
+constexpr char kIngestRootCa[] = R"PEM(-----BEGIN CERTIFICATE-----
+MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
+VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
+A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
+WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz
+IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi
+QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR
+HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D
+9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8
+p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
+-----END CERTIFICATE-----
+)PEM";
 constexpr std::uint32_t kSampleIntervalMs = 5000;
 constexpr std::uint32_t kReconnectIntervalMs = 10000;
 constexpr std::uint32_t kMaximumRetryMs = 60000;
@@ -39,9 +56,9 @@ constexpr std::uint64_t kSequenceBlockSize = 1000000;
 constexpr std::size_t kBatchSize = 6;
 constexpr std::size_t kQueueCapacity = 120;
 #if TELEMETRY_SIMULATED
-constexpr char kFirmwareVersion[] = "sim-fw-0.2.0";
+constexpr char kFirmwareVersion[] = "sim-fw-0.2.1";
 #else
-constexpr char kFirmwareVersion[] = "pzem-fw-0.2.0";
+constexpr char kFirmwareVersion[] = "pzem-fw-0.2.1";
 #endif
 
 TelemetryQueue<kQueueCapacity> queue;
@@ -57,6 +74,9 @@ bool ntpConfigured = false;
 
 bool configurationIsReady() {
   return String(WIFI_SSID) != "CHANGE_ME" && String(DEVICE_INGEST_TOKEN) != "CHANGE_ME" &&
+         String(WIFI_SSID).length() > 0 && String(WIFI_PASSWORD) != "CHANGE_ME" &&
+         String(DEVICE_INGEST_TOKEN).length() >= 32 &&
+         String(INGEST_URL).startsWith("https://") &&
          !String(INGEST_URL).startsWith("https://YOUR_PROJECT");
 }
 
@@ -143,14 +163,17 @@ bool uploadBatch(
 
   String body;
   serializeJson(document, body);
+  WiFiClientSecure transport;
+  transport.setCACert(kIngestRootCa);
   HTTPClient client;
   client.setTimeout(8000);
-  client.begin(INGEST_URL);
+  if (!client.begin(transport, INGEST_URL)) return false;
   client.addHeader("Content-Type", "application/json");
   client.addHeader("Idempotency-Key", batchId);
   client.addHeader("x-device-token", DEVICE_INGEST_TOKEN);
   const int status = client.POST(body);
   client.end();
+  Serial.printf("Upload HTTP status=%d samples=%u\n", status, static_cast<unsigned>(count));
   return status == 200 || status == 201;
 }
 

@@ -1,4 +1,6 @@
+import hashlib
 import json
+import ssl
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,19 @@ MIGRATION_PATH = (
 
 def load_schema() -> dict[str, object]:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def test_firmware_upload_requires_verified_https():
+    source = (SCHEMA_PATH.parents[1] / "firmware/src/main.cpp").read_text(encoding="utf-8")
+    assert 'String(INGEST_URL).startsWith("https://")' in source
+    assert "transport.setCACert(kIngestRootCa)" in source
+    assert "client.begin(transport, INGEST_URL)" in source
+    assert "setInsecure" not in source
+    pem = source[source.index("-----BEGIN CERTIFICATE-----"):
+                 source.index("-----END CERTIFICATE-----") + len("-----END CERTIFICATE-----")]
+    assert hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest() == (
+        "349dfa4058c5e263123b398ae795573c4e1313c83fe68f93556cd5e8031b3c7d"
+    )
 
 
 def test_json_schema_accepts_the_reference_batch() -> None:
