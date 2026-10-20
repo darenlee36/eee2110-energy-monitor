@@ -20,7 +20,7 @@ from energy_monitor.dashboard_queries import _monthly_usage_from_env, get_cycle_
 from energy_monitor.models import CycleSummary
 from energy_monitor.storage import SQLiteTelemetryStore
 
-REPORTING_VERSION = "cycle-report-template-v1"
+REPORTING_VERSION = "cycle-report-template-v2"
 
 
 class ReportDraft(BaseModel):
@@ -176,6 +176,16 @@ def render_report(evidence: dict[str, object]) -> str:
             else:
                 lines.append("  Charge total unavailable; some cycle charges cannot be estimated.")
     lines.extend(["", f"Cycles excluded from totals for quality errors: {excluded}.", ""])
+    if evidence["reporting_version"] != "cycle-report-template-v1":
+        lines.extend(["## Cycle quality notes", ""])
+        escapes = {ord(char): "\\" + char for char in "\\`*_{}[]<>!()#|"}
+        for cycle in evidence["cycles"]:
+            note = " ".join(cycle["quality_note"].splitlines()).translate(escapes)
+            lines.append(
+                f"- Cycle `{cycle['cycle_id']}` · {cycle['assessment']} "
+                f"(rule-based, not ML): {note}"
+            )
+        lines.append("")
     lines.extend(f"- {item}" for item in sorted(limitations))
     return "\n".join(lines)
 

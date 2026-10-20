@@ -414,8 +414,10 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     database = build_dashboard_cycle_database(tmp_path)
     store = SQLiteTelemetryStore(database)
     cycle = store.fetch_cycles()[0]
-    store.save_report(build_report(store, profile_id=cycle["profile_id"],
-        device_id=cycle["device_id"], cycle_id=cycle["cycle_id"]))
+    with monkeypatch.context() as old:
+        old.setattr("energy_monitor.reporting.REPORTING_VERSION", "cycle-report-template-v1")
+        store.save_report(build_report(store, profile_id=cycle["profile_id"],
+            device_id=cycle["device_id"], cycle_id=cycle["cycle_id"]))
     # Saved reports must remain viewable without their analytical cycle cache.
     with store._connect() as connection, connection:
         connection.execute("DELETE FROM appliance_cycles")
@@ -439,3 +441,4 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     assert any("Engine: template" in c.value for c in app.caption)
     assert not any(b.label.startswith("Generate") for b in app.button)
     assert app.json
+    assert any(cycle["quality_note"] in text.value for text in app.text)

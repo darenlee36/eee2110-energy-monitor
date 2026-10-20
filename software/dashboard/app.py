@@ -266,7 +266,15 @@ def render_reports() -> None:
         st.markdown(
             report["report_text"].replace("# Energy Monitor report", "### Cycle report")
             .replace("## Evidence and qualified totals", "#### Evidence and qualified totals")
+            .replace("## Cycle quality notes", "#### Cycle quality notes")
         )
+        if report["reporting_version"] == "cycle-report-template-v1":
+            st.caption("Cycle quality notes retained with this legacy template:")
+            for cycle in report["evidence_snapshot"]["cycles"]:
+                st.text(
+                    f"Cycle {cycle['cycle_id']} · {cycle['assessment']} (rule-based, not ML)\n"
+                    f"{cycle['quality_note']}"
+                )
         with st.expander("Inspect saved evidence"):
             st.caption(f"Report {report_id} · Version {report['reporting_version']} · "
                        f"SHA-256 {report['evidence_hash']}")

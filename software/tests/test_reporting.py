@@ -323,3 +323,33 @@ def test_module_worker_is_duplicate_safe_without_a_browser(tmp_path, monkeypatch
         result = subprocess.run([*command, *action], capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
     assert len(store.fetch_reports()) == 6
+
+
+def test_readable_report_preserves_cycle_quality_warning_and_v1_history(tmp_path, monkeypatch):
+    store, ids = seeded_cycles(tmp_path)
+    warning = "Energy cross-check differs from the meter result by 30.0%"
+    change_cycle(store, ids[0], quality_note=warning, assessment="unusual")
+    module = importlib.import_module("energy_monitor.reporting")
+    with monkeypatch.context() as old:
+        old.setattr(module, "REPORTING_VERSION", "cycle-report-template-v1")
+        previous = make_report(store, cycle_id=ids[0])
+        store.save_report(previous)
+    report = make_report(store, cycle_id=ids[0])
+    assert report.evidence_snapshot["excluded_quality_count"] == 0
+    assert report.evidence_snapshot["totals_by_source"]["simulated"]["energy_kwh"] == "0.1"
+    assert warning in report.report_text
+    assert ids[0] in report.report_text
+    assert "unusual" in report.report_text
+    assert "rule-based, not ML" in report.report_text
+    assert report.report_id != previous.report_id
+    assert store.fetch_report(str(previous.report_id)) == previous.model_dump(mode="json")
+    store.save_report(report)
+    assert len(store.fetch_reports()) == 2
+
+
+def test_report_quality_notes_cannot_embed_markdown_images(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    change_cycle(store, ids[0], quality_note="![unsafe](https://example.invalid/image)")
+    report = make_report(store, cycle_id=ids[0])
+    assert "![unsafe](" not in report.report_text
+    assert "unsafe" in report.report_text
