@@ -253,6 +253,23 @@ development evidence only, never real-sensor or model-training validation.
 
 ## Deferred work
 
+### Visual reporting checkpoint — 21 October 2026
+
+Template v3 keeps the cycle's electrical readings inside the immutable report evidence,
+so the next chart view will not depend on a surviving telemetry cache. It adds readable
+averages and rule-based observations, possible explanations and suggested checks. Older
+v1/v2 reports remain readable and are not overwritten. Manual entries do not gain invented
+electrical averages or reading traces.
+
+Reports now shows an actual anomaly score of **Unavailable**. Under **Preview the score
+display**, enable **Show sample score (demo only)** to try an illustrative 0–100 slider
+(initially 72). The sample is not calculated from the selected cycle, is not a fault
+probability and is never saved into report evidence or training data.
+
+The full metric-card layout, saved-reading plots, batch comparison plots and dedicated
+insights panel are still pending. The usage reserve was kept for a tested local checkpoint;
+no public deployment, paid AI call, database migration or reporting schedule was enabled.
+
 Water-volume model training, Isolation Forest validation, agentic reporting,
 real UART pin selection, and physical hardware validation remain outside this software-dashboard
 build. Manual labels are collected now so a later volume model can be trained on validated cycles.

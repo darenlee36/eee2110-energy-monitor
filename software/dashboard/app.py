@@ -263,6 +263,15 @@ def render_reports() -> None:
         st.caption(f"Source: {sources} · Engine: {report['engine']} · Status: {report['status']}")
         st.caption(f"Coverage: {malaysia_time(report['period_start'])} – "
                    f"{malaysia_time(report['period_end'])} MYT")
+        st.subheader("Anomaly assessment")
+        st.metric("Anomaly score", "Unavailable")
+        st.caption("The model is not trained. No appliance-health score has been calculated.")
+        with st.expander("Preview the score display"):
+            if st.toggle("Show sample score (demo only)", key="report_sample_score"):
+                st.warning("Demo only — not calculated from this cycle. Not a fault probability.")
+                sample = st.slider("Illustrative score", 0, 100, 72, key="report_sample_value")
+                st.metric("Sample score — not this cycle", f"{sample} / 100")
+                st.progress(sample / 100, text="Sample scale: 0 = less unusual; 100 = more unusual")
         st.markdown(
             report["report_text"].replace("# Energy Monitor report", "### Cycle report")
             .replace("## Evidence and qualified totals", "#### Evidence and qualified totals")

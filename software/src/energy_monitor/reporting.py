@@ -20,7 +20,7 @@ from energy_monitor.dashboard_queries import _monthly_usage_from_env, get_cycle_
 from energy_monitor.models import CycleSummary
 from energy_monitor.storage import SQLiteTelemetryStore
 
-REPORTING_VERSION = "cycle-report-template-v2"
+REPORTING_VERSION = "cycle-report-template-v3"
 
 
 class ReportDraft(BaseModel):
@@ -98,6 +98,16 @@ def build_report(
             "eligible_for_totals": eligible,
             "tariff_estimate": estimate.model_dump(mode="json"),
         })
+        if REPORTING_VERSION == "cycle-report-template-v3":
+            fields = (
+                "timestamp", "voltage_v", "current_a", "active_power_w",
+                "cumulative_energy_kwh", "frequency_hz", "power_factor", "quality_status",
+            )
+            cycles[-1]["readings"] = [
+                {key: value for key, value in reading.model_dump(mode="json").items()
+                 if key in fields}
+                for reading in detail.readings
+            ] if detail.record_source != "manual" else []
         limitations.update(
             f"Unresolved tariff component: {c}." for c in estimate.unresolved_components
         )
@@ -152,6 +162,8 @@ def build_report(
 
 def render_report(evidence: dict[str, object]) -> str:
     """Render fixed text; user labels/notes are not interpreted as Markdown."""
+    if evidence["reporting_version"] == "cycle-report-template-v3":
+        return render_visual_report_text(evidence)
     cycle_count = evidence["cycle_count"]
     profile_id, device_id = evidence["profile_id"], evidence["device_id"]
     source_counts = evidence["source_counts"]
@@ -187,6 +199,82 @@ def render_report(evidence: dict[str, object]) -> str:
             )
         lines.append("")
     lines.extend(f"- {item}" for item in sorted(limitations))
+    return "\n".join(lines)
+
+
+def report_insights(evidence: dict[str, object]) -> dict[str, list[str]]:
+    """Evidence-based guidance, not an AI diagnosis or model result."""
+    cycles = evidence["cycles"]
+    observations = []
+    possibilities = []
+    if evidence["excluded_quality_count"]:
+        observations.append(
+            "Some cycles have missing or invalid readings and are excluded from totals."
+        )
+        possibilities.append("Possible explanation: an interrupted or incomplete data stream.")
+    if any(c["assessment"] == "unusual" for c in cycles):
+        observations.append("The rule-based energy cross-check flagged a difference.")
+        possibilities.append(
+            "Possible explanations include different operating conditions "
+            "or a measurement mismatch; "
+            "these readings cannot confirm the cause or diagnose a fault."
+        )
+    if not observations:
+        observations.append(
+            "No missing-reading or energy cross-check warning is flagged in this saved summary. "
+            "This does not establish appliance health or efficiency."
+        )
+    if set(evidence["source_counts"]) != {"sensor"}:
+        observations.append(
+            "This report includes demonstration, entered or unverified data; "
+            "it is not proof of real appliance performance."
+        )
+    return {
+        "observations": observations,
+        "possibilities": possibilities or [
+            "No cause of an anomaly can be inferred from this report."
+        ],
+        "actions": [
+            "Compare cycles using the same appliance settings, load and starting conditions.",
+            "Avoid unnecessary repeat cycles; compare energy per completed task, not power alone.",
+            "Check data completeness and repeat a controlled cycle before investigating a fault.",
+        ],
+    }
+
+
+def render_visual_report_text(evidence: dict[str, object]) -> str:
+    lines = [
+        "# Cycle performance summary", "", "Anomaly score: unavailable — model not trained.", ""
+    ]
+    for source, total in sorted(evidence["totals_by_source"].items()):
+        lines.append(f"Energy used ({source}): {float(total['energy_kwh']):g} kWh.")
+        if total["charge_low_rm"] is not None:
+            lines.append(
+                f"Estimated cost: RM {float(total['charge_low_rm']):.4f}–"
+                f"{float(total['charge_high_rm']):.4f}; partial tariff estimate, not a bill."
+            )
+    escapes = {ord(char): "\\" + char for char in "\\`*_{}[]<>!()#|"}
+    for index, cycle in enumerate(evidence["cycles"], 1):
+        lines.extend([
+            "", f"## Cycle {index}", "", f"Duration: {cycle['duration_seconds']} seconds."
+        ])
+        if cycle["record_source"] == "manual":
+            lines.append("Average current: unavailable; electrical averages were not recorded.")
+        else:
+            for label, field, unit in (
+                ("Average power", "average_power_w", "W"),
+                ("Peak power", "peak_power_w", "W"),
+                ("Average current", "average_current_a", "A"),
+                ("Average voltage", "average_voltage_v", "V"),
+            ):
+                lines.append(f"{label}: {cycle[field]:.2f} {unit}.")
+        note = " ".join(cycle["quality_note"].splitlines()).translate(escapes)
+        lines.append(f"Quality note ({cycle['assessment']}, rule-based, not ML): {note}")
+    for section, messages in report_insights(evidence).items():
+        lines.extend(["", f"## {section.title()}", "", *[f"- {m}" for m in messages]])
+    lines.extend(["", "## Technical details", ""])
+    lines.extend(f"Cycle reference: {c['cycle_id']}" for c in evidence["cycles"])
+    lines.extend(["", *[f"- {item}" for item in evidence["limitations"]]])
     return "\n".join(lines)
 
 

@@ -353,3 +353,47 @@ def test_report_quality_notes_cannot_embed_markdown_images(tmp_path):
     report = make_report(store, cycle_id=ids[0])
     assert "![unsafe](" not in report.report_text
     assert "unsafe" in report.report_text
+
+
+def test_visual_report_keeps_reading_snapshot_after_source_cache_changes(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    report = make_report(store, cycle_id=ids[0])
+    trace = report.evidence_snapshot["cycles"][0]["readings"]
+    assert trace[0]["active_power_w"] == 2050
+    assert trace[0]["current_a"] > 0
+    assert "frequency_hz" in trace[0]
+    assert "firmware_version" not in trace[0]
+    store.save_report(report)
+    with closing(store._connect()) as connection, connection:
+        connection.execute("DELETE FROM telemetry")
+    reopened = SQLiteTelemetryStore(store.database_path)
+    assert reopened.fetch_report(str(report.report_id))["evidence_snapshot"]["cycles"][0][
+        "readings"
+    ] == trace
+    assert "Average power" in report.report_text
+    assert "Average current" in report.report_text
+    assert ids[0] not in report.report_text.split("## Technical details")[0]
+    assert report.evidence_snapshot["model"]["status"] == "not_trained"
+    assert "anomaly_score" not in report.evidence_snapshot
+
+
+def test_manual_report_does_not_invent_readings_or_electrical_averages(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    with closing(store._connect()) as connection, connection:
+        connection.execute("UPDATE appliance_cycles SET record_source = 'manual'")
+    report = make_report(store, cycle_id=ids[0])
+    assert report.evidence_snapshot["cycles"][0]["readings"] == []
+    assert "Average current: unavailable" in report.report_text
+
+
+def test_insights_distinguish_quality_flags_from_a_fault_diagnosis(tmp_path):
+    store, ids = seeded_cycles(tmp_path)
+    change_cycle(store, ids[0], assessment="unusual", energy_difference_ratio=0.3)
+    report = make_report(store, cycle_id=ids[0])
+    insights = importlib.import_module("energy_monitor.reporting").report_insights(
+        report.evidence_snapshot
+    )
+    assert any("cross-check" in message for message in insights["observations"])
+    assert any("possible" in message.lower() for message in insights["possibilities"])
+    assert any("compare" in message.lower() for message in insights["actions"])
+    assert "fault confirmed" not in str(insights).lower()

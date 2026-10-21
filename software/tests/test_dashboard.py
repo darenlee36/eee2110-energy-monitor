@@ -442,3 +442,30 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     assert not any(b.label.startswith("Generate") for b in app.button)
     assert app.json
     assert any(cycle["quality_note"] in text.value for text in app.text)
+
+
+def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch):
+    from energy_monitor.reporting import build_report
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    cycle = store.fetch_cycles()[0]
+    report = build_report(store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+                          cycle_id=cycle["cycle_id"])
+    store.save_report(report)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    values = {m.label: m.value for m in app.metric}
+    assert values["Anomaly score"] == "Unavailable"
+    before = store.fetch_report(str(report.report_id))
+    next(t for t in app.toggle if t.label == "Show sample score (demo only)").set_value(True).run()
+    assert not app.exception
+    assert any(m.label == "Sample score — not this cycle" and m.value == "72 / 100"
+               for m in app.metric)
+    assert any("not calculated from this cycle" in w.value for w in app.warning)
+    assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
+    assert store.fetch_report(str(report.report_id)) == before
+    assert len(store.fetch_reports()) == 1
