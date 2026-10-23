@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -469,3 +469,155 @@ def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch)
     assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
     assert store.fetch_report(str(report.report_id)) == before
     assert len(store.fetch_reports()) == 1
+
+
+def test_visual_reports_render_saved_metrics_and_traces_without_cache(tmp_path, monkeypatch):
+    from energy_monitor.reporting import build_report
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    cycle = store.fetch_cycles()[0]
+    report = build_report(store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+                          cycle_id=cycle["cycle_id"])
+    store.save_report(report)
+    with store._connect() as connection, connection:
+        connection.execute("DELETE FROM telemetry")
+        connection.execute("DELETE FROM appliance_cycles")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    values = {m.label: m.value for m in app.metric}
+    assert values["Average power"] == "2,050 W"
+    assert values["Average frequency"] == "50.00 Hz"
+    assert values["Average current"].endswith(" A")
+    assert values["Anomaly score"] == "Unavailable"
+    assert len(app.get("plotly_chart")) == 3
+    assert sum(b.label == "Reset view" for b in app.button) == 3
+    assert any(h.value == "Insights & next steps" for h in app.subheader)
+    assert app.json
+
+
+@pytest.mark.parametrize("source", ["manual", "legacy"])
+def test_visual_report_missing_traces_are_not_invented(tmp_path, monkeypatch, source):
+    from energy_monitor.reporting import build_report
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    if source == "manual":
+        with store._connect() as connection, connection:
+            connection.execute("UPDATE appliance_cycles SET record_source = 'manual'")
+    else:
+        monkeypatch.setattr(
+            "energy_monitor.reporting.REPORTING_VERSION", "cycle-report-template-v2"
+        )
+    cycle = store.fetch_cycles()[0]
+    store.save_report(build_report(store, profile_id=cycle["profile_id"],
+                                  device_id=cycle["device_id"], cycle_id=cycle["cycle_id"]))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert not app.get("plotly_chart")
+    assert any("No saved reading trace" in i.value for i in app.info)
+    values = {m.label: m.value for m in app.metric}
+    assert values["Average frequency"] == "Unavailable"
+    if source == "manual":
+        assert values["Average current"] == "Unavailable"
+        assert values["Average power"] == "Unavailable"
+
+
+def test_report_traces_preserve_units_and_do_not_bridge_bad_samples():
+    from dashboard.components import build_report_traces
+
+    cycle = {"started_at": "2026-10-01T00:00:00+00:00", "meter_energy_kwh": 0.012,
+             "readings": [
+        {"timestamp": "2026-10-01T00:00:00+00:00", "active_power_w": 100,
+         "current_a": 0.5, "cumulative_energy_kwh": 1, "quality_status": "valid"},
+        {"timestamp": "2026-10-01T00:00:05+00:00", "active_power_w": 200,
+         "current_a": 1, "cumulative_energy_kwh": 1.005, "quality_status": "read_error"},
+        {"timestamp": "2026-10-01T00:00:25+00:00", "active_power_w": 100,
+         "current_a": 0.5, "cumulative_energy_kwh": 1.01, "quality_status": "valid"},
+    ]}
+    power, current, energy = build_report_traces(cycle)
+    assert list(power.data[0].x) == [0, 5, None, 25]
+    assert list(power.data[0].y) == [100, None, None, 100]
+    assert current.layout.yaxis.title.text == "Current (A)"
+    assert energy.layout.yaxis.title.text == "Energy (kWh)"
+    assert energy.data[0].y[0] == pytest.approx(0.002)
+    assert energy.data[0].y[-1] == pytest.approx(0.012)
+    assert power.data[0].connectgaps is False
+    assert build_report_traces({"readings": []}) == []
+
+
+def test_report_comparison_separates_sources_and_omits_excluded_energy():
+    from dashboard.components import build_report_comparison
+
+    cycles = [
+        {"record_source": "measured", "data_origin": "simulated", "meter_energy_kwh": 0.1,
+         "duration_seconds": 150, "eligible_for_totals": True},
+        {"record_source": "manual", "data_origin": "unknown", "meter_energy_kwh": 0.2,
+         "duration_seconds": 180, "eligible_for_totals": False},
+    ]
+    energy, duration = build_report_comparison(cycles)
+    assert list(energy.data[0].y) == [0.1]
+    assert list(energy.data[1].y) == [None]
+    assert list(duration.data[1].y) == [180]
+    assert energy.data[0].name != energy.data[1].name
+    assert energy.layout.yaxis.rangemode == "tozero"
+    assert duration.layout.yaxis.title.text == "Duration (s)"
+
+
+def test_report_energy_trace_does_not_hide_a_meter_counter_reset():
+    from dashboard.components import build_report_traces
+
+    cycle = {"started_at": "2026-10-01T00:00:00+00:00", "meter_energy_kwh": 0.01,
+             "readings": [
+        {"timestamp": "2026-10-01T00:00:00+00:00", "active_power_w": 100,
+         "current_a": 0.5, "cumulative_energy_kwh": 1, "quality_status": "valid"},
+        {"timestamp": "2026-10-01T00:00:05+00:00", "active_power_w": 100,
+         "current_a": 0.5, "cumulative_energy_kwh": 0, "quality_status": "valid"},
+    ]}
+    power, _, energy = build_report_traces(cycle)
+    assert list(power.data[0].y) == [100, 100]
+    assert list(energy.data[0].y) == [None, None]
+
+
+@pytest.mark.parametrize("count", [5, 10, 20])
+def test_visual_batch_reports_allow_exact_count_and_cycle_selection(tmp_path, monkeypatch, count):
+    from energy_monitor.reporting import build_report
+
+    database = tmp_path / "batch-dashboard.db"
+    store = SQLiteTelemetryStore(database)
+    for index in range(count):
+        readings = generate_cycle_scenario(
+            "normal", datetime(2026, 10, 1, tzinfo=UTC) + timedelta(minutes=5 * index)
+        )
+        readings = [reading.model_copy(update={
+            "sample_sequence": index * 1000 + reading.sample_sequence,
+            "cumulative_energy_kwh": index + reading.cumulative_energy_kwh,
+        }) for reading in readings]
+        for batch in batch_readings(readings):
+            store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    assert len(store.fetch_cycles()) == count
+    cycle = store.fetch_cycles()[0]
+    store.save_report(build_report(store, profile_id=cycle["profile_id"],
+                                  device_id=cycle["device_id"], cycle_count=count))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert any(h.value == f"{count}-cycle overview" for h in app.subheader)
+    total_cost = next(m.value for m in app.metric if m.label == "Estimated report cost")
+    assert all(len(part.rsplit(".", 1)[-1]) == 3 for part in total_cost.split("–"))
+    assert len(app.get("plotly_chart")) == 5
+    picker = next(s for s in app.selectbox if s.label == "Cycle readings")
+    assert len(picker.options) == count
+    picker.set_value(count - 1).run()
+    assert not app.exception
+    assert any(h.value == f"Cycle {count} performance" for h in app.subheader)
+    assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"

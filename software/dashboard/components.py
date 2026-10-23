@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from statistics import fmean
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -11,10 +12,215 @@ from plotly.subplots import make_subplots
 
 from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView
 from energy_monitor.models import ConnectionState, ManualCycleRecord, TariffEstimate
+from energy_monitor.reporting import report_insights
 from energy_monitor.storage import SQLiteTelemetryStore
 
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 CHART_FONT = "Cascadia Code, SFMono-Regular, Consolas, Liberation Mono, monospace"
+REPORT_SOURCES = {
+    "simulated": ("Demonstration data", "#E22DFF"),
+    "sensor": ("Sensor-recorded data", "#3BD7FF"),
+    "manual": ("Manually entered data", "#FFC46B"),
+    "mixed": ("Mixed-origin data", "#72F6C7"),
+    "unknown": ("Unverified origin", "#A8B4D0"),
+}
+
+
+def _report_source(cycle: dict) -> str:
+    return "manual" if cycle["record_source"] == "manual" else cycle["data_origin"]
+
+
+def build_report_traces(cycle: dict) -> list[go.Figure]:
+    """Plot saved evidence only; gaps and invalid samples never become zeroes."""
+    readings = cycle.get("readings", [])
+    valid = [r for r in readings if r["quality_status"] == "valid"]
+    if not valid:
+        return []
+    start = datetime.fromisoformat(cycle["started_at"])
+    baseline = valid[0]["cumulative_energy_kwh"]
+    span = max(0, valid[-1]["cumulative_energy_kwh"] - baseline)
+    first_increment = max(0, cycle["meter_energy_kwh"] - span)
+    counter_reset = any(
+        b["cumulative_energy_kwh"] < a["cumulative_energy_kwh"]
+        for a, b in zip(valid, valid[1:], strict=False)
+    )
+    elapsed, power, current, energy = [], [], [], []
+    previous_time = None
+    for reading in readings:
+        timestamp = datetime.fromisoformat(reading["timestamp"])
+        if previous_time is not None and (timestamp - previous_time).total_seconds() > 15:
+            for values in (elapsed, power, current, energy):
+                values.append(None)
+        good = reading["quality_status"] == "valid"
+        elapsed.append((timestamp - start).total_seconds())
+        power.append(reading["active_power_w"] if good else None)
+        current.append(reading["current_a"] if good else None)
+        energy.append(
+            first_increment + max(0, reading["cumulative_energy_kwh"] - baseline)
+            if good and not counter_reset else None
+        )
+        previous_time = timestamp
+    figures = []
+    for title, unit, values, color in (
+        ("Power throughout the cycle", "Power (W)", power, "#3BD7FF"),
+        ("Current throughout the cycle", "Current (A)", current, "#E22DFF"),
+        ("Energy accumulated", "Energy (kWh)", energy, "#72F6C7"),
+    ):
+        figure = go.Figure(go.Scatter(
+            x=elapsed, y=values, mode="lines+markers", connectgaps=False,
+            line={"color": color, "width": 3}, marker={"size": 4},
+            name=unit, hovertemplate="%{x:.0f} s<br>%{y:.5g} " + unit + "<extra></extra>",
+        ))
+        figure.update_layout(
+            **_transparent_chart_layout(285), title={"text": title, "x": 0.02},
+            xaxis={"title": "Elapsed (s)", "automargin": True},
+            yaxis={"title": unit, "rangemode": "tozero", "automargin": True},
+            showlegend=False,
+        )
+        figures.append(figure)
+    return figures
+
+
+def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
+    figures = []
+    sources = list(dict.fromkeys(_report_source(c) for c in cycles))
+    for field, title, unit in (
+        ("meter_energy_kwh", "Energy used by cycle", "Energy (kWh)"),
+        ("duration_seconds", "Duration by cycle", "Duration (s)"),
+    ):
+        figure = go.Figure()
+        for source in sources:
+            group = [(i, c) for i, c in enumerate(cycles, 1) if _report_source(c) == source]
+            label, color = REPORT_SOURCES[source]
+            figure.add_trace(go.Bar(
+                x=[f"Cycle {i}" for i, _ in group],
+                y=[c[field] if field != "meter_energy_kwh" or c["eligible_for_totals"]
+                   else None for _, c in group],
+                name=label, marker_color=color,
+                hovertemplate="%{x}<br>%{y:.5g} " + unit + "<extra>%{fullData.name}</extra>",
+            ))
+        figure.update_layout(
+            **_transparent_chart_layout(330), title={"text": title, "x": 0.02},
+            xaxis={"categoryorder": "array",
+                   "categoryarray": [f"Cycle {i}" for i in range(1, len(cycles) + 1)],
+                   "automargin": True},
+            yaxis={"title": unit, "rangemode": "tozero", "automargin": True},
+            legend={"orientation": "h", "y": -0.35},
+        )
+        figures.append(figure)
+    return figures
+
+
+def render_report_dashboard(report: dict) -> None:
+    """Readable report presentation; persistence and generation stay in app.py."""
+    evidence = report["evidence_snapshot"]
+    cycles = evidence["cycles"]
+    if len(cycles) > 1:
+        st.subheader(f"{len(cycles)}-cycle overview")
+        for source, total in evidence["totals_by_source"].items():
+            st.caption(REPORT_SOURCES[source][0])
+            cells = st.columns(3)
+            cells[0].metric("Cycles included in totals", total["cycle_count"])
+            cells[1].metric("Report energy", f"{float(total['energy_kwh']):.5f} kWh")
+            cost = "Unavailable" if total["charge_low_rm"] is None else (
+                f"RM {float(total['charge_low_rm']):.3f}–{float(total['charge_high_rm']):.3f}"
+            )
+            cells[2].metric("Estimated report cost", cost)
+        for index, figure in enumerate(build_report_comparison(cycles)):
+            render_resettable_chart(figure, chart_key=f"report_batch_{report['report_id']}_{index}")
+        st.caption(
+            "Cycles are ordered by completion time. Quality-excluded cycles have no energy bar; "
+            "duration still describes the recorded cycle. Totals stay separate by data origin."
+        )
+    if evidence["excluded_quality_count"]:
+        st.warning(
+            f"{evidence['excluded_quality_count']} cycle(s) excluded from energy/cost totals."
+        )
+    selected = st.selectbox(
+        "Cycle readings", range(len(cycles)),
+        format_func=lambda i: f"Cycle {i + 1} · " + datetime.fromisoformat(
+            cycles[i]["started_at"]
+        ).astimezone(MALAYSIA_TZ).strftime("%d %b, %H:%M"),
+        key=f"report_cycle_{report['report_id']}",
+    ) if len(cycles) > 1 else 0
+    cycle = cycles[selected]
+    st.subheader(f"Cycle {selected + 1} performance")
+    st.caption(
+        REPORT_SOURCES[_report_source(cycle)][0]
+        + " · Sensor origin is not calibration evidence."
+    )
+    cells = st.columns(3)
+    seconds = cycle["duration_seconds"]
+    cells[0].metric("Cycle duration", f"{seconds // 60}m {seconds % 60:02d}s")
+    cells[1].metric("Energy used", f"{cycle['meter_energy_kwh']:.5f} kWh")
+    cells[2].metric("Estimated cycle cost", _charge_value(
+        TariffEstimate.model_validate(cycle["tariff_estimate"])
+    ))
+    manual = cycle["record_source"] == "manual"
+    valid = [r for r in cycle.get("readings", []) if r["quality_status"] == "valid"]
+    frequency = fmean(r["frequency_hz"] for r in valid) if valid and not manual else None
+    for row in (
+        [("Average power", "average_power_w", ",.0f", "W"),
+         ("Peak power", "peak_power_w", ",.0f", "W"),
+         ("Average current", "average_current_a", ".2f", "A")],
+        [("Average voltage", "average_voltage_v", ".1f", "V"),
+         ("Average power factor", "average_power_factor", ".3f", ""),
+         ("Average frequency", None, ".2f", "Hz")],
+    ):
+        cells = st.columns(3)
+        for cell, (label, field, precision, unit) in zip(cells, row, strict=True):
+            value = None if manual else frequency if field is None else cycle[field]
+            cell.metric(
+                label, "Unavailable" if value is None else f"{value:{precision}} {unit}".strip()
+            )
+    st.caption(
+        "Electrical averages use valid samples; cost is a partial estimate, not a household bill."
+    )
+    st.text(cycle["quality_note"])
+    if not cycle["eligible_for_totals"]:
+        st.warning(
+            "This cycle's recorded values are shown, but excluded from report energy/cost totals."
+        )
+    st.subheader("Recorded readings")
+    figures = build_report_traces(cycle) if not manual else []
+    if figures:
+        for index, figure in enumerate(figures):
+            render_resettable_chart(
+                figure, chart_key=f"report_trace_{report['report_id']}_{selected}_{index}"
+            )
+        if not any(v is not None for v in figures[2].data[0].y):
+            st.warning("Energy trace unavailable: the saved meter counter moves backwards.")
+        st.caption(
+            "Blank sections mark invalid samples or gaps longer than 15 seconds. "
+            "Energy includes the cycle's recorded starting increment; gaps are not interpolated."
+        )
+        with st.expander("Reading values"):
+            st.dataframe(pd.DataFrame(cycle["readings"]).rename(columns={
+                "timestamp": "Recorded at", "voltage_v": "Voltage (V)",
+                "current_a": "Current (A)", "active_power_w": "Power (W)",
+                "cumulative_energy_kwh": "Meter counter (kWh)",
+                "frequency_hz": "Frequency (Hz)", "power_factor": "Power factor",
+                "quality_status": "Reading quality",
+            }), hide_index=True, width="stretch")
+    else:
+        st.info(
+            "No saved reading trace available. "
+            "Older/manual reports retain their recorded summary only."
+        )
+    st.subheader("Insights & next steps")
+    st.caption("Rule-based guidance from saved evidence—not an AI diagnosis or model score.")
+    headings = {"observations": "What the readings show", "possibilities": "Possible explanations",
+                "actions": "What to try next"}
+    for section, messages in report_insights(evidence).items():
+        st.markdown(f"**{headings[section]}**")
+        for message in messages:
+            st.write(message)
+    with st.expander("Cost and data limitations"):
+        st.write("Household usage and applicable tariff adjustments may be unresolved. "
+                 "Taxes, incentives, fixed charges and other bill components may be excluded.")
+        st.write(
+            "The anomaly model is not trained; no physical fault or proven efficiency is inferred."
+        )
 
 
 def _transparent_chart_layout(height: int) -> dict[str, object]:

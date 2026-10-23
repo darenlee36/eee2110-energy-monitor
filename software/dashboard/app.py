@@ -20,6 +20,7 @@ from components import (
     render_cycle_receipt,
     render_live_state,
     render_manual_cycle_entry,
+    render_report_dashboard,
     render_resettable_chart,
     render_tariff_disclosure,
 )
@@ -203,9 +204,10 @@ def render_reports() -> None:
                 "Run the laptop worker after cycles arrive."
             )
             return
-        profile, device = st.selectbox(
-            "Report device / profile", pairs, format_func=lambda p: f"{p[1]} / {p[0]}"
-        )
+        with st.expander("Monitor / appliance"):
+            profile, device = st.selectbox(
+                "Report device / profile", pairs, format_func=lambda p: f"{p[1]} / {p[0]}"
+            )
         cycles = store.fetch_report_cycles(profile, device)
         selected_report = None
         if can_edit and cycles:
@@ -216,7 +218,7 @@ def render_reports() -> None:
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
                     "Completed cycle", list(cycle_by_id), format_func=lambda cid:
-                    f"{malaysia_time(cycle_by_id[cid]['started_at'])} · {cid[-8:]}")
+                    f"{malaysia_time(cycle_by_id[cid]['started_at'])}")
                 count = st.selectbox("Batch size (cycles)", [5, 10, 20])
                 individual = st.button("Generate cycle report")
                 batch = st.button("Generate batch report")
@@ -256,13 +258,14 @@ def render_reports() -> None:
         report_id = st.selectbox("Saved report", list(by_id), key="report_history_id",
             format_func=lambda rid: (
                 f"{by_id[rid]['kind'].title()} · {by_id[rid]['cycle_count']} cycle(s) · "
-                f"{malaysia_time(by_id[rid]['generated_at'])} · {rid[-8:]}"
+                f"{malaysia_time(by_id[rid]['generated_at'])} · report {list(by_id).index(rid) + 1}"
             ))
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
-        st.caption(f"Source: {sources} · Engine: {report['engine']} · Status: {report['status']}")
+        st.caption("Generated summary · not AI-generated")
         st.caption(f"Coverage: {malaysia_time(report['period_start'])} – "
                    f"{malaysia_time(report['period_end'])} MYT")
+        render_report_dashboard(report)
         st.subheader("Anomaly assessment")
         st.metric("Anomaly score", "Unavailable")
         st.caption("The model is not trained. No appliance-health score has been calculated.")
@@ -272,21 +275,13 @@ def render_reports() -> None:
                 sample = st.slider("Illustrative score", 0, 100, 72, key="report_sample_value")
                 st.metric("Sample score — not this cycle", f"{sample} / 100")
                 st.progress(sample / 100, text="Sample scale: 0 = less unusual; 100 = more unusual")
-        st.markdown(
-            report["report_text"].replace("# Energy Monitor report", "### Cycle report")
-            .replace("## Evidence and qualified totals", "#### Evidence and qualified totals")
-            .replace("## Cycle quality notes", "#### Cycle quality notes")
-        )
-        if report["reporting_version"] == "cycle-report-template-v1":
-            st.caption("Cycle quality notes retained with this legacy template:")
-            for cycle in report["evidence_snapshot"]["cycles"]:
-                st.text(
-                    f"Cycle {cycle['cycle_id']} · {cycle['assessment']} (rule-based, not ML)\n"
-                    f"{cycle['quality_note']}"
-                )
-        with st.expander("Inspect saved evidence"):
+        with st.expander("Technical details and saved evidence"):
+            st.caption(
+                f"Source: {sources} · Engine: {report['engine']} · Status: {report['status']}"
+            )
             st.caption(f"Report {report_id} · Version {report['reporting_version']} · "
                        f"SHA-256 {report['evidence_hash']}")
+            st.text(report["report_text"])
             st.json(report["evidence_snapshot"])
     except ValueError:
         st.error("Report validation failed. Invalid history was not displayed.")

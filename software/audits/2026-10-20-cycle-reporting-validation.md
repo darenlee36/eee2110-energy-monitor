@@ -130,3 +130,57 @@ fulfilled. The independent daily software checker was verified ACTIVE at 10:00
 Malaysia time and was left unchanged. Final usage check: 27% five-hour and 69%
 weekly remaining; no 5% safeguard was crossed. No further implementation batch
 was started after this verified target.
+
+## Visual report dashboard — 23 October 2026
+
+Implemented the approved presentation upgrade without changing the immutable report
+format, storage, source permissions or generation policy. Main report content now uses
+human-readable metric cards and saved power/current/energy traces. Frequency averages
+come only from valid saved readings; manual and legacy reports do not invent them.
+Batch summaries compare exactly 5, 10 or 20 cycles, keep provenance groups separate,
+and omit quality-excluded energy bars while showing recorded duration. Insights use
+the existing deterministic observations/explanations/actions. Actual anomaly score
+remains unavailable; the optional sample score remains display-only and labelled.
+
+Fresh verification:
+
+- Five initial feature cases failed before implementation (missing metrics, plots and
+  unavailable-reading states), then passed with the new presentation.
+- Dashboard regression: **27 passed**, including all three batch sizes, last-cycle
+  selection, snapshot-only rendering, manual/v2 fallback, source/exclusion handling,
+  sample-score immutability, invalid samples, gaps and meter-counter reversal.
+- Full software regression: **172 passed**, eight existing upstream Streamlit/NumPy
+  deprecation warnings. `ruff check . --no-cache`: clean.
+- Isolated headless Edge used a disposable local database with 20 generated cycles and
+  four saved reports. No test values were written to Supabase or production storage.
+- Browser verified 5/10/20 bar counts, saved-report selection, the sample 72/100 display with
+  actual score still unavailable, and three independent reading plots.
+- Actual drag zoom changed the first chart's x range from approximately -8.65–153.65
+  seconds to 23.74–104.80 seconds. **Reset view** restored the original range.
+- The browser connector failed initialization; bundled Playwright with installed Edge
+  provided isolated verification without installing another browser or using signed-in
+  sessions. No browser console warnings or errors were observed during these checks.
+- Preview launched from the repository root to load the deployment-equivalent dark
+  theme. Layout checks at widths 320, 768, 1024 and 1440 found no horizontal overflow.
+  Native controls expose accessible labels; assistive-technology testing is not claimed.
+- One focused read-only code review found no actionable correctness blocker. It did
+  not independently rerun tests, audit storage security, validate tariffs/calibration,
+  or assess browser appearance; the parent execution supplied browser/test evidence.
+- Final screenshot review caught a truncated four-decimal batch cost range. Three
+  regression assertions failed before matching the existing three-decimal cycle range;
+  the final dashboard rerun passed all 27 tests and Ruff remained clean. Stored amounts
+  keep their original precision. Last-cycle switching is covered by AppTest; a direct
+  browser attempt to locate the twentieth option encountered the virtualized option list
+  and is not counted as a successful browser interaction.
+
+Screenshots: [readings and metrics](screenshots/2026-10-23-report-readings-desktop.png),
+[phone readings](screenshots/2026-10-23-report-readings-phone.png),
+[batch comparison](screenshots/2026-10-23-report-batch-desktop.png),
+[illustrative score](screenshots/2026-10-23-report-sample-score.png).
+
+Remaining: Codex narrative generation with bounded input/output validation, an approved
+laptop schedule, eventual off-laptop execution, real-data milestones and final software
+regression/documentation. The visual work does not complete milestone 10. Overall
+software progress remains **60%**. No main merge, push, public deployment, paid API,
+secret change, product reporting schedule or hardware validation was performed in
+this visual upgrade. The daily checker was not modified.

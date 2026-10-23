@@ -251,12 +251,12 @@ No paid API, Codex enhancement, or product reporting schedule is enabled. Those 
 a later manual validation and quota/cadence decision. Simulated and manual cycles are
 development evidence only, never real-sensor or model-training validation.
 
-## Deferred work
+## Visual reports and remaining work
 
 ### Visual reporting checkpoint — 21 October 2026
 
 Template v3 keeps the cycle's electrical readings inside the immutable report evidence,
-so the next chart view will not depend on a surviving telemetry cache. It adds readable
+so the chart view does not depend on a surviving telemetry cache. It adds readable
 averages and rule-based observations, possible explanations and suggested checks. Older
 v1/v2 reports remain readable and are not overwritten. Manual entries do not gain invented
 electrical averages or reading traces.
@@ -266,8 +266,25 @@ display**, enable **Show sample score (demo only)** to try an illustrative 0–1
 (initially 72). The sample is not calculated from the selected cycle, is not a fault
 probability and is never saved into report evidence or training data.
 
-The full metric-card layout, saved-reading plots, batch comparison plots and dedicated
-insights panel are still pending. The usage reserve was kept for a tested local checkpoint;
+### Visual report dashboard — 23 October 2026
+
+Reports presents duration, energy and qualified cost alongside average/peak power,
+average current, voltage, power factor and frequency for the selected cycle. Power,
+current and accumulated-energy charts use only saved readings, with independent
+**Reset view** buttons. Invalid samples and gaps longer than 15 seconds break lines;
+a backwards meter counter suppresses the energy trace. A recorded starting increment
+can make the accumulated-energy trace begin above zero. Manual/older reports show an
+explicit unavailable state rather than fabricated traces or frequency.
+
+Exact 5/10/20-cycle reports add energy and duration comparisons plus a cycle selector.
+Totals and chart series remain separate by origin; quality-excluded cycles have no
+energy bar but retain their recorded duration. **Insights & next steps** separates
+observations, possible explanations and practical checks. It is rule-based guidance,
+not a fault diagnosis. IDs, engine metadata and full snapshots remain available in
+**Technical details and saved evidence** rather than the main summary.
+
+Run the local preview from the repository root to load `.streamlit/config.toml` and
+match the deployed dark theme. This visual upgrade is a local development checkpoint;
 no public deployment, paid AI call, database migration or reporting schedule was enabled.
 
 Water-volume model training, Isolation Forest validation, agentic reporting,
