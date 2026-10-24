@@ -128,3 +128,11 @@ User review is required before executing this plan. Recommended execution is nat
   The one-time continuation is retired; the daily 10:00 checker remains active.
   Overall software checklist stays 60%; Codex enhancement and a separately approved
   quota-bounded product reporting schedule remain the next batch, not delivered AI.
+- 25 October: user approved 30-minute laptop scheduling and one pending cycle review
+  per pass. Shared manual/scheduled locking, quota RPC cutoff, crash reservations,
+  scoped cloud catch-up and expiring limited-user Windows task implemented and
+  verified. First native pass saved four templates and paused safely on missing
+  background executable discovery; explicit installed Codex path fixed it. One
+  successful native AI review saved to Supabase, recovered in a fresh cache and reused
+  without inference. Task enabled; no main merge, push, public deployment or daily
+  checker modification. Details and limits recorded in the reporting audit.

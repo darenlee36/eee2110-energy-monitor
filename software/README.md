@@ -261,7 +261,7 @@ Provenance is mandatory. The original numerical report, quality warnings, partia
 tariff qualification and untrained-model status are retained.
 
 Check account usage first; do not invoke when either allowance has 5% or less remaining.
-This manual CLI does not itself query the account usage endpoint. From `software/`:
+The CLI now queries both usage windows and pauses at 5% or unknown usage. From `software/`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m energy_monitor.report_narrative --database PATH_TO_EXISTING_LOCAL_DB --report-id SAVED_TEMPLATE_UUID --allow-one-codex-call
@@ -281,17 +281,67 @@ may fail closed and require revalidation.
 Successful or failed outcomes use a stable completion ID for the source template and
 review-policy version. Sequential repeats reuse the first saved outcome without another
 invocation; failures retain a numerical fallback and do not retry automatically. A
-90-second client timeout is not a server-side billing/token guarantee. Concurrent
-processes or a crash before persistence can still cause another invocation: do not
-run overlapping workers. A serial execution lock and automatic usage guard are
-prerequisites for any future schedule.
+90-second client timeout is not a server-side billing/token guarantee. The guarded
+manual and scheduled entry points now share a process lock and durable reservation
+journal; interrupted or unconfirmed attempts are held for review, never automatically retried.
 
 The manual entry point only writes the explicitly selected local database. The existing
 Supabase report format supports these snapshots, but no live cloud AI-report write or
 public deployment was performed. Reports displays saved AI selections or failure
 warnings; opening/refreshing it never invokes Codex. The public dashboard cannot start
-an AI call. Laptop scheduling, failed-review retry policy and off-laptop generation
-remain decision-gated.
+an AI call. Off-laptop generation and any failed-review retry policy remain decision-gated.
+
+### Guarded laptop schedule — 25 October 2026
+
+Approved cadence: every **30 minutes**, with at most **one** pending individual-cycle
+Codex review per pass. Existing exact 5/10/20-cycle batch options remain manual;
+the schedule does not produce repetitive batches. Each pass synchronizes Supabase,
+catches up missing numerical reports, then considers one AI review. A maximum of
+20 telemetry pages per pass bounds catch-up work; a larger backlog resumes next pass.
+The established `tefal-kettle` / `sim-esp32-03b248` scope is synthetic ESP32 data,
+not PZEM readings or real model-validation evidence.
+
+The guard reads `account/rateLimits/read` through the installed Codex app-server
+without starting a model thread/turn. Both the five-hour and weekly windows must be
+known, current and above 5% remaining. Check again immediately before invocation;
+unknown quota or either window at/below 5% pauses AI. Numerical reports still catch
+up without AI. Shared account use can change quota after a check: this is a pre-call
+safeguard, not a hard server token limit. No paid API key is configured.
+
+From `software/`, inspect/manage only the dedicated native Windows task:
+
+```powershell
+.\scripts\reporting-schedule.ps1 -Action Plan
+.\scripts\reporting-schedule.ps1 -Action Install  # Creates disabled, never overwrites
+.\scripts\reporting-schedule.ps1 -Action Enable
+.\scripts\reporting-schedule.ps1 -Action Status
+.\scripts\reporting-schedule.ps1 -Action Disable
+```
+
+Task `EnergyMonitor-CycleReporting` uses the logged-in user's limited privileges,
+`pythonw.exe` (no console), no wake-up, no overlapping instances, and a ten-minute
+execution limit. It may run on battery, so normal laptop battery consumption applies.
+It runs only while Windows is awake and this user is signed in; screen-off is fine.
+`StartWhenAvailable` requests missed-run recovery after availability; the worker then
+catches up saved cycles. This does not generate while the laptop is off or asleep.
+The separate daily 10 AM software checker is untouched. Trigger expiry and pre-call
+checks prevent new inference from 7 December 2026 Malaysia time onward.
+
+The registered action includes an absolute `--codex-executable` path: Codex Desktop's
+interactive PATH is not Windows Task Scheduler's PATH. If an app update removes that
+binary, AI fails closed; inspect/update the dedicated task before resuming it. The
+management script accepts `-CodexExecutable` when needed; no global PATH is changed.
+
+Cloud credentials stay in ignored `.env`, read only by the trusted parent. The
+dedicated ignored cache is `data/reporting-worker-cache.db`; safe status metadata is
+`data/reporting-worker/status.json`. **Preserve `data/reporting-worker/attempts/`**:
+it reserves each source/policy review before inference so a crash or uncertain save
+cannot silently repeat it. Completed/failed saved outcomes also prevent retries.
+`needs_review` means an uncertain reservation needs deliberate investigation; do
+not delete the journal or automatically retry. This protection is single-laptop,
+not distributed exactly-once execution. Enabling/running rejects changed task safety
+settings; replacing a task requires deliberate inspection. No public dashboard visit
+or refresh invokes AI, and no public deployment is implied by local scheduling.
 
 ## Visual reports and remaining work
 

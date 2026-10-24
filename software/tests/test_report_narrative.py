@@ -7,6 +7,19 @@ from test_reporting import change_cycle, make_report, seeded_cycles
 from energy_monitor.reporting import validate_report
 
 
+@pytest.fixture(autouse=True)
+def isolate_external_account_usage(monkeypatch):
+    # Mock only the external quota read, not the real cutoff validation.
+    monkeypatch.setattr("energy_monitor.report_worker.read_codex_usage", lambda: {
+        "rateLimitsByLimitId": {"codex": {
+            "primary": {"usedPercent": 10, "windowDurationMins": 300,
+                        "resetsAt": 9999999999},
+            "secondary": {"usedPercent": 10, "windowDurationMins": 10080,
+                          "resetsAt": 9999999999},
+        }}
+    })
+
+
 def test_narrative_catalog_uses_numbers_but_excludes_notes_and_identifiers(tmp_path):
     from energy_monitor.report_narrative import narrative_catalog
 

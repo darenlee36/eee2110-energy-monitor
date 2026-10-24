@@ -260,3 +260,83 @@ model training and real-sensor validation are not delivered by this change.
 No main merge, push, public deployment, live Supabase write, credential change or
 daily-checker modification was performed. Fixed software milestone progress remains
 60%; this is partial milestone-10 work, not completion of final evaluation/documentation.
+
+## Guarded laptop reporting schedule — 25 October 2026
+
+User approved 30-minute laptop-only passes with at most one pending cycle review
+per pass. This supersedes the previous scheduling decision gate; off-laptop workers,
+paid APIs, main merge and public deployment remain unapproved. No new dependency,
+database table, secret or service was introduced. One worker module isolates quota,
+process locking and crash reservations; one native Windows management script makes
+the task inspectable, disabled-on-install and reversible.
+
+### Verified controls
+
+- Installed Codex app-server quota RPC: initialize, initialized,
+  account/rateLimits/read only; no thread/start or turn/start. Both current five-hour
+  and weekly windows must exceed 5% remaining. Missing, stale, invalid or non-finite
+  data pauses AI. Numerical/template catch-up still runs without inference.
+- Quota is rechecked by the actual model runner. Expiry is checked before reservation,
+  after quota and after login immediately before inference. These are pre-call checks,
+  not a guarantee against other shared-account activity or already-started inference.
+- Default manual/scheduled entry points share a process lock. Cross-process lock
+  rejection and release were exercised. A durable per-source/policy reservation is
+  flushed before inference. Crash/uncertain saves remain held, never auto-retried;
+  a quota pause before inference removes only its own unused reservation.
+- Native task `EnergyMonitor-CycleReporting`: logged-in current user verified by SID,
+  Interactive/Limited, every 30 minutes, IgnoreNew, no wake, StartWhenAvailable,
+  ten-minute execution limit, battery operation allowed. Trigger and runtime expire
+  at 7 December 2026 00:00 Malaysia time. Enable/Run reject unsafe settings drift.
+- Independent review found two Important issues: cutoff checked too early, and task
+  safeguards not revalidated at enable/run. Both were fixed; cutoff regression first
+  failed then passed. Nine substituted native task drifts are rejected. Reviewer
+  rechecked and approved the fixes without external/model calls or mutations.
+- Actual task registration was read back while disabled, then enabled only after
+  verification. Windows normalizes the principal to an abbreviated account name;
+  a failing regression reproduced this and the comparison now resolves the unique
+  SID rather than accepting arbitrary abbreviated text.
+
+### Native execution and cloud evidence
+
+- First Windows-launched pass saved four individual numerical reports, then paused
+  with `usage_unavailable`, zero AI attempts and no completion reservation. Codex is
+  absent from Windows' persistent user/machine PATH but available in the desktop app's
+  interactive PATH. The task was disabled while this difference was corrected.
+- The registered action now explicitly names the existing installed Codex executable;
+  no global PATH, authentication or credentials were changed. A regression covers
+  executable discovery without interactive-shell PATH.
+- Retried native task exited **0**, status `completed`, exactly **one** AI attempt,
+  zero held attempts; numerical templates were reused. Report:
+  `75b90401-b71b-5530-8e8f-4cc8b5f3d38b`. Next native run shown as 25 October 01:10:45
+  Malaysia time at verification; the task remains enabled, ready for 30-minute polling.
+- A fresh temporary empty cache fetched that report directly from Supabase: engine
+  codex, generated status, source counts simulated=1, totals only under simulated,
+  model not_trained and no anomaly_score. `record_source=measured` is the existing
+  automatic-versus-manual storage classification, not evidence of sensor origin;
+  actual report provenance remains explicitly simulated.
+- Re-requesting the same saved source through a fresh cloud-backed store returned
+  idle/zero AI attempts with quota and runner functions that would fail if invoked.
+  Thus saved-outcome reuse was confirmed without another model call.
+- Exactly one live model invocation was used for this activation. No telemetry rows
+  were fabricated/uploaded. Four numerical reports and one validated AI-selected
+  report were written through the existing server-only cloud persistence path.
+
+### Limits and completion boundary
+
+Final full regression after native-executable discovery correction: **226 passed**,
+eight existing upstream Streamlit/NumPy deprecation warnings; Ruff clean. Tests mock
+external inference/quota boundaries and include the real cross-process lock plus
+native Windows task-definition checks. They do not consume live model calls.
+
+Physical laptop sleep/resume was not forced or tested. StartWhenAvailable is verified
+configuration; backlog recovery is tested with stored fixtures. No generation occurs
+while asleep/off or signed out. No multi-laptop exactly-once guarantee exists; retain
+the ignored reservation journal. Failed/uncertain attempts require deliberate review.
+Polling is not a complete CDC guarantee for concurrent cloud commits.
+
+Exact 5/10/20-cycle batches remain explicit user options, not automatic repeated jobs.
+The independent 10 AM software checker was not read, replaced or modified. Main,
+public deployment, hardware milestones and model training are unchanged. Software
+progress remains **60%**, with reporting as partial milestone-10 work. Next decision
+gate is approval to publish the tested reporting upgrade, not a need for real telemetry
+to continue developing this reporting foundation.

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -157,7 +156,7 @@ def _base_from_evidence(report: ReportDraft) -> tuple[ReportDraft, CodexReview]:
     return validate_report(base), review
 
 
-def _review_id(base: ReportDraft):
+def codex_review_id(base: ReportDraft):
     # First outcome wins per source snapshot and policy, even if later AI choices differ.
     return uuid5(NAMESPACE_URL, f"codex:{NARRATIVE_VERSION}:{base.evidence_hash}")
 
@@ -179,7 +178,7 @@ def build_codex_report(
         "codex_review": review.model_dump(mode="json"),
     }
     report = ReportDraft.model_validate({
-        **base.model_dump(mode="json"), "report_id": _review_id(base), "engine": "codex",
+        **base.model_dump(mode="json"), "report_id": codex_review_id(base), "engine": "codex",
         "status": "generated" if failure is None else (
             "validation_failed" if failure == "invalid_output" else "error"
         ),
@@ -233,7 +232,7 @@ def validate_codex_report(report: ReportDraft) -> ReportDraft:
             _validate_selection(review.selection, narrative_catalog(base))
         if (
             report.evidence_snapshot["reporting_version"] != NARRATIVE_VERSION
-            or report.report_id != _review_id(base) or report.status != expected_status
+            or report.report_id != codex_review_id(base) or report.status != expected_status
             or report.evidence_hash != _digest(report.evidence_snapshot)
             or report.report_text != render_codex_text(report.evidence_snapshot)
         ):
@@ -264,7 +263,7 @@ def enhance_report(
         raise ValueError("saved template report not found")
     base = validate_report(row)
     catalog = narrative_catalog(base)
-    target = str(_review_id(base))
+    target = str(codex_review_id(base))
     if store.fetch_report(target) is not None:
         return target
     try:
@@ -309,16 +308,29 @@ def parse_codex_events(output: str) -> dict:
         raise NarrativeError("invalid_output") from exc
 
 
-def run_codex(catalog: dict) -> dict:
-    """One ephemeral ChatGPT-authenticated invocation; no project config or account API key."""
-    executable = shutil.which("codex")
-    if executable is None or (os.name == "nt" and Path(executable).suffix.lower() != ".exe"):
-        raise NarrativeError("unavailable")
+def codex_environment() -> dict[str, str]:
     # No inherited application/device/API credentials, proxies or session identifiers.
     names = {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATH", "PATHEXT", "USERPROFILE",
              "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH",
              "TEMP", "TMP", "CODEX_HOME"}
-    environment = {k: v for k, v in os.environ.items() if k.upper() in names}
+    return {k: v for k, v in os.environ.items() if k.upper() in names}
+
+
+def run_codex(catalog: dict) -> dict:
+    """One ephemeral ChatGPT-authenticated invocation; no project config or account API key."""
+    from energy_monitor.report_worker import (
+        codex_executable,
+        ensure_reporting_window,
+        quota_remaining,
+        read_codex_usage,
+    )
+
+    executable = codex_executable()
+    if executable is None or (os.name == "nt" and Path(executable).suffix.lower() != ".exe"):
+        raise NarrativeError("unavailable")
+    quota_remaining(read_codex_usage())
+    ensure_reporting_window()
+    environment = codex_environment()
     prompt = (
         "Select the most relevant evidence-backed observations and practical actions for an "
         "Energy Monitor report. Return only JSON IDs matching the output schema. "
@@ -343,6 +355,7 @@ def run_codex(catalog: dict) -> dict:
             login = subprocess.run(
                 [executable, "login", "status"], cwd=folder, env=environment,
                 capture_output=True, text=True, encoding="utf-8", timeout=15, check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             if login.returncode or "Logged in using ChatGPT" not in login.stdout + login.stderr:
                 raise NarrativeError("unavailable")
@@ -365,9 +378,11 @@ def run_codex(catalog: dict) -> dict:
                 'shell_environment_policy.inherit="none"', 'model_reasoning_effort="low"',
             ):
                 command.extend(["-c", setting])
+            ensure_reporting_window()
             result = subprocess.run(
                 [*command, "-"], input=prompt, cwd=folder, env=environment,
                 capture_output=True, text=True, encoding="utf-8", timeout=90, check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             if result.returncode:
                 raise NarrativeError("unavailable")
@@ -383,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
     """Explicit local-only manual entry point; never load .env or create a schedule."""
     import argparse
 
+    from energy_monitor.report_worker import DEFAULT_STATE, run_reporting_pass
+
     parser = argparse.ArgumentParser(description="Manually enhance one saved numerical report")
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--report-id", type=UUID, required=True)
@@ -393,10 +410,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         store = SQLiteTelemetryStore(args.database)
-        report_id = enhance_report(store, str(args.report_id), runner=run_codex)
-        saved = store.fetch_report(report_id)
-        print(f"AI review checkpoint: {report_id} · {saved['status']}")
-        return 0 if saved["status"] == "generated" else 1
+        base = store.fetch_report(str(args.report_id))
+        if base is None:
+            raise ValueError("saved template report not found")
+        result = run_reporting_pass(
+            store, profile_id=base["profile_id"], device_id=base["device_id"],
+            state_dir=DEFAULT_STATE, report_id=str(args.report_id),
+        )
+        print(f"AI review checkpoint: {result['status']}")
+        return 0 if result["status"] in ("completed", "idle", "already_running") else 1
     except (OSError, ValueError):
         print("Review not confirmed; numerical report unchanged. Check local data and Codex.",
               file=sys.stderr)
