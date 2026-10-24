@@ -340,3 +340,26 @@ public deployment, hardware milestones and model training are unchanged. Softwar
 progress remains **60%**, with reporting as partial milestone-10 work. Next decision
 gate is approval to publish the tested reporting upgrade, not a need for real telemetry
 to continue developing this reporting foundation.
+
+## Public release preparation — 25 October 2026
+
+User explicitly approved publishing the tested reporting upgrade. Release v0.2.0 is
+additive and includes the existing reporting foundation plus visual/AI-selected
+report display and the separately verified laptop worker. The hosting entrypoint
+remains `software/dashboard/app.py` on `main`; requirements and existing Streamlit
+secrets are unchanged. Public page visits/refreshes do not invoke AI. No new migration
+or permission expansion is part of this deployment; the reports table was previously
+deployed and the worker's live server write/read was already verified.
+
+Pre-release remote `main`: `158d3d56e518ecfbfb492dfabf9b18949696cd64`.
+It is an ancestor of the tested feature branch, so publication can fast-forward
+without discarding remote work. No GitHub Actions workflow exists in this checkout;
+local full-suite results must not be described as CI results. Keep the annotated
+release tag as the reproducible deployment checkpoint and record hosted smoke-test
+results separately after deployment.
+
+Rollback criteria: persistent app exception, failed Live/Cycles access, unreadable
+saved cloud reports, or unexpected public write/AI controls. First allow a complete
+hosted restart to avoid stale imported classes. If still broken, restore the previous
+known-good application revision with a non-destructive revert/redeployment; preserve
+cloud report rows, secrets, laptop reservations and the independent daily checker.

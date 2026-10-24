@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fyp-energy-monitor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Software-first telemetry pipeline for the EEE2110 appliance energy monitor"
 requires-python = ">=3.12"
 dependencies = [
