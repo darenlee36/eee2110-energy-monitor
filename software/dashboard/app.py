@@ -175,7 +175,7 @@ def sync_cloud_source() -> None:
 
 def render_reports() -> None:
     st.header("Reports")
-    st.caption("Saved cycle evidence · viewing never runs AI · no reporting schedule enabled")
+    st.caption("Saved cycle evidence · viewing never runs AI · generation runs separately")
 
     def history(profile=None, device=None):
         try:

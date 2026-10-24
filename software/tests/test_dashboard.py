@@ -647,6 +647,8 @@ def test_saved_ai_review_displays_without_invoking_codex(tmp_path, monkeypatch, 
     assert not app.exception
     assert any(h.value == "AI-assisted review" for h in app.subheader)
     assert any("Codex-selected" in c.value for c in app.caption)
+    assert any("generation runs separately" in c.value for c in app.caption)
+    assert not any("no reporting schedule enabled" in c.value for c in app.caption)
     assert len(app.get("plotly_chart")) == 3
     assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
     if failure:

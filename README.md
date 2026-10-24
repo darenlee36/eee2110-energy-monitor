@@ -44,6 +44,11 @@ per-session simulated snapshot.
 
 ## Release notes
 
+### v0.2.1 — 25 October 2026
+
+- Corrected the Reports caption to distinguish separate report generation from viewing,
+  without incorrectly claiming that no laptop reporting schedule exists.
+
 ### v0.2.0 — 25 October 2026
 
 - Added saved per-cycle reports and exact 5/10/20-cycle summaries with durable cloud history.
