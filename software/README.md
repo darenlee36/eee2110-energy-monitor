@@ -247,9 +247,51 @@ SELECT/INSERT; anonymous/authenticated clients cannot access the reports table d
 The worker runs once and exits. It does **not** run inside a browser session, start a timer,
 or generate reports while the laptop is off. Re-running `--generate-missing` catches up
 completed cycles. This is numerical/template reporting, **not AI-generated reporting**.
-No paid API, Codex enhancement, or product reporting schedule is enabled. Those require
-a later manual validation and quota/cadence decision. Simulated and manual cycles are
-development evidence only, never real-sensor or model-training validation.
+The separate manual Codex review below is opt-in; this numerical worker never invokes
+it. No paid API or product reporting schedule is enabled. Simulated and manual cycles
+are development evidence only, never real-sensor or model-training validation.
+
+### Manual laptop Codex review — 24 October 2026
+
+The first AI stage is **Codex-selected insights**, not free-form AI-authored prose.
+Python builds eligible observations/actions from a saved template; Codex selects their
+IDs, and Python supplies every displayed statement and value. The strict output schema
+rejects arbitrary text, unsupported IDs, duplicate selections and invented scores.
+Provenance is mandatory. The original numerical report, quality warnings, partial
+tariff qualification and untrained-model status are retained.
+
+Check account usage first; do not invoke when either allowance has 5% or less remaining.
+This manual CLI does not itself query the account usage endpoint. From `software/`:
+
+```powershell
+.\.venv\Scripts\python.exe -m energy_monitor.report_narrative --database PATH_TO_EXISTING_LOCAL_DB --report-id SAVED_TEMPLATE_UUID --allow-one-codex-call
+```
+
+An installed `codex.exe` signed in with ChatGPT is required on Windows. The runner
+forces ChatGPT authentication and excludes application/device/API credentials from
+the child environment. It does not load `.env`. The compact catalog excludes labels,
+notes, timestamps, device/profile identifiers and raw telemetry. One ephemeral invocation
+runs from a temporary folder with user config ignored, managed policies retained,
+read-only sandbox, and command/browser/MCP/app/plugin/memory features disabled where
+supported. Unknown errors, tool-activity events, malformed output and incomplete turns
+are rejected. The observed exact notice that Code Mode is disabled is harmless and
+does not grant it tools. Verified with Codex CLI `0.163.0-alpha.11`; interface changes
+may fail closed and require revalidation.
+
+Successful or failed outcomes use a stable completion ID for the source template and
+review-policy version. Sequential repeats reuse the first saved outcome without another
+invocation; failures retain a numerical fallback and do not retry automatically. A
+90-second client timeout is not a server-side billing/token guarantee. Concurrent
+processes or a crash before persistence can still cause another invocation: do not
+run overlapping workers. A serial execution lock and automatic usage guard are
+prerequisites for any future schedule.
+
+The manual entry point only writes the explicitly selected local database. The existing
+Supabase report format supports these snapshots, but no live cloud AI-report write or
+public deployment was performed. Reports displays saved AI selections or failure
+warnings; opening/refreshing it never invokes Codex. The public dashboard cannot start
+an AI call. Laptop scheduling, failed-review retry policy and off-laptop generation
+remain decision-gated.
 
 ## Visual reports and remaining work
 

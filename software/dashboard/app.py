@@ -175,7 +175,7 @@ def sync_cloud_source() -> None:
 
 def render_reports() -> None:
     st.header("Reports")
-    st.caption("Saved cycle evidence · template engine · no AI calls or reporting schedule enabled")
+    st.caption("Saved cycle evidence · viewing never runs AI · no reporting schedule enabled")
 
     def history(profile=None, device=None):
         try:
@@ -262,7 +262,10 @@ def render_reports() -> None:
             ))
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
-        st.caption("Generated summary · not AI-generated")
+        st.caption(
+            "AI-assisted selection · numerical template retained" if report["engine"] == "codex"
+            else "Generated summary · not AI-generated"
+        )
         st.caption(f"Coverage: {malaysia_time(report['period_start'])} – "
                    f"{malaysia_time(report['period_end'])} MYT")
         render_report_dashboard(report)

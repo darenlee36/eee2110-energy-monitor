@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 
 from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView
 from energy_monitor.models import ConnectionState, ManualCycleRecord, TariffEstimate
+from energy_monitor.report_narrative import FAILURE_MESSAGES, narrative_sections
 from energy_monitor.reporting import report_insights
 from energy_monitor.storage import SQLiteTelemetryStore
 
@@ -215,6 +216,21 @@ def render_report_dashboard(report: dict) -> None:
         st.markdown(f"**{headings[section]}**")
         for message in messages:
             st.write(message)
+    if report["engine"] == "codex":
+        st.subheader("AI-assisted review")
+        st.caption(
+            "Codex-selected insights; Python supplies every statement and value. "
+            "Not a free-form diagnosis. Opening or refreshing this report makes no AI call."
+        )
+        sections = narrative_sections(report)
+        if sections:
+            for section, messages in sections.items():
+                st.markdown("**" + {"observations": "Selected observations",
+                                   "actions": "Suggested next steps"}[section] + "**")
+                for message in messages:
+                    st.write(message)
+        else:
+            st.warning(FAILURE_MESSAGES[evidence["codex_review"]["failure"]])
     with st.expander("Cost and data limitations"):
         st.write("Household usage and applicable tariff adjustments may be unresolved. "
                  "Taxes, incentives, fixed charges and other bill components may be excluded.")

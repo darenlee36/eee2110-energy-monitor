@@ -184,3 +184,79 @@ regression/documentation. The visual work does not complete milestone 10. Overal
 software progress remains **60%**. No main merge, push, public deployment, paid API,
 secret change, product reporting schedule or hardware validation was performed in
 this visual upgrade. The daily checker was not modified.
+
+## Manual Codex-selected review — 24 October 2026
+
+Continued after the user accepted the visual report and authorized development until
+a decision gate. Reused existing immutable report storage and Streamlit/Plotly views.
+One new `report_narrative.py` module isolates the process boundary and insight policy
+from numerical/template generation. No new package, service, table or migration.
+
+### Implemented boundary
+
+- Codex selects IDs from an eligible, application-owned catalog. Python supplies all
+  wording and values. This is AI-assisted selection, not free-form AI narrative.
+- Catalog input excludes notes, labels, timestamps, device/profile IDs and raw traces.
+  Strict selection validation rejects extra fields, unknown/ineligible IDs, duplicate
+  selections and missing provenance. It cannot add an arbitrary numerical/health claim.
+- Generated, validation-failed and runtime-error snapshots retain their source template,
+  canonical evidence hash, deterministic policy/source completion ID and numerical
+  fallback. Stored template/AI engine-policy pairs are validated to prevent mislabelling.
+- The local-only CLI requires an existing database, saved template ID and explicit
+  authorization flag. It does not load application secrets. ChatGPT login is required;
+  no application API key is inherited or configured.
+- Runtime uses a temporary cwd, minimal OS/auth-location environment, no user config,
+  retained managed constraints, read-only sandbox and disabled tool/app/plugin/browser/
+  memory/hook features. Unknown errors, tool events and incomplete/malformed results
+  fail closed. No actual tool activity was observed in the accepted live execution.
+- First saved outcome wins, including failure. Sequential retries reuse it without a
+  new invocation. There is no automatic retry or automatic scheduling.
+
+### Test and live evidence
+
+- Initial contract tests: 11 expected missing-feature failures before implementation.
+- Runtime/CLI tests first failed for absent isolation/parser/authorization behaviour.
+  Dashboard success/failure display tests also failed before their UI was added.
+- The first live simulated attempt was rejected because an `item.error` notice was
+  initially misclassified as tool activity. Two generic, non-project diagnostic runs
+  identified the exact message: Code Mode was unavailable because its host was disabled.
+  The parser now permits only that exact fail-closed notice; other errors still fail.
+  A reproducing test failed before the narrow correction and passed afterwards.
+- Four deliberate live Codex invocations in total: one rejected simulated report,
+  two generic diagnostics and one accepted new simulated report. No API key, new
+  service billing, production telemetry or Supabase writes were used.
+- Accepted simulated report `e1a0ca84-7c19-586b-b5eb-d4db2325bc42`, source template
+  `0a3d01f4-9f8f-5a4f-9b08-9cba3005cf85`: generated status, five valid observations
+  and three actions. A repeated request returned the saved outcome with a runner
+  that would fail if called, proving sequential reuse.
+- Existing cloud read/cache path verified with HTTP fixtures, including recovery into
+  an empty cache without analytical cycles. This is not a live cloud deployment test.
+- Final full regression: **201 passed**, eight existing upstream Streamlit/NumPy
+  deprecation warnings. Ruff clean. A new mislabelling case failed before enforcing
+  the reserved AI policy/engine boundary. An initially over-broad version allowlist
+  then failed the existing template-version-history test; narrowing that check
+  preserved history compatibility and produced the final green suite.
+- Browser: actual accepted review rendered in isolated headless Edge; saved readings
+  and anomaly score Unavailable retained. Widths 320/768/1024/1440 had no document
+  horizontal overflow; no console warnings/errors observed. Dashboard tests verify
+  viewing and refresh do not invoke Codex.
+- Focused read-only review found no blocking defect. It noted that simultaneous
+  processes or a crash after inference but before save can cause another invocation.
+  It did not independently run model calls, browser checks or the full suite.
+
+Screenshots: [AI review](screenshots/2026-10-24-ai-review-desktop.png),
+[phone width](screenshots/2026-10-24-ai-review-phone.png).
+
+### Remaining decision gate and limitations
+
+No schedule is enabled. Cadence and maximum AI invocations per run require user
+approval. Before scheduling, implement mechanical account-usage checks for the 5%
+cutoff and serial execution; the current manual CLI relies on the operator checking
+usage first. A client timeout does not enforce a server-side token/billing limit.
+Failed snapshots are immutable and need an explicitly designed retry policy rather
+than automatic resubmission. Laptop-off generation, free-form narrative generation,
+model training and real-sensor validation are not delivered by this change.
+
+No main merge, push, public deployment, live Supabase write, credential change or
+daily-checker modification was performed. Fixed software milestone progress remains
+60%; this is partial milestone-10 work, not completion of final evaluation/documentation.

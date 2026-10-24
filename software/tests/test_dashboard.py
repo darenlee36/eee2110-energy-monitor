@@ -621,3 +621,38 @@ def test_visual_batch_reports_allow_exact_count_and_cycle_selection(tmp_path, mo
     assert not app.exception
     assert any(h.value == f"Cycle {count} performance" for h in app.subheader)
     assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
+
+
+@pytest.mark.parametrize("failure", [None, "timeout"])
+def test_saved_ai_review_displays_without_invoking_codex(tmp_path, monkeypatch, failure):
+    from energy_monitor.report_narrative import build_codex_report
+    from energy_monitor.reporting import build_report
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    cycle = store.fetch_cycles()[0]
+    base = build_report(store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+                        cycle_id=cycle["cycle_id"])
+    store.save_report(base)
+    selected = {"observations": ["data_origin", "electrical"], "actions": ["avoid_repeats"]}
+    store.save_report(build_codex_report(
+        base, selected if failure is None else None, failure=failure
+    ))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    monkeypatch.setattr("energy_monitor.report_narrative.run_codex",
+                        lambda *a: pytest.fail("Viewing must not invoke Codex"))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert any(h.value == "AI-assisted review" for h in app.subheader)
+    assert any("Codex-selected" in c.value for c in app.caption)
+    assert len(app.get("plotly_chart")) == 3
+    assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
+    if failure:
+        assert any("timed out" in w.value for w in app.warning)
+    else:
+        assert any("Recorded average power" in m.value for m in app.markdown)
+    next(b for b in app.button if b.label == "Refresh now").click().run()
+    assert not app.exception
+    assert len(store.fetch_reports()) == 2
