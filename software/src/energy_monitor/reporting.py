@@ -35,8 +35,8 @@ class ReportDraft(BaseModel):
     period_end: AwareDatetime
     generated_at: AwareDatetime
     reporting_version: str
-    engine: Literal["template"] = "template"
-    status: Literal["generated"] = "generated"
+    engine: Literal["template", "codex"] = "template"
+    status: Literal["generated", "validation_failed", "error"] = "generated"
     evidence_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     evidence_snapshot: dict[str, object]
     report_text: str
@@ -162,6 +162,10 @@ def build_report(
 
 def render_report(evidence: dict[str, object]) -> str:
     """Render fixed text; user labels/notes are not interpreted as Markdown."""
+    if evidence["reporting_version"] == "cycle-report-codex-v1":
+        from energy_monitor.report_narrative import render_codex_text
+
+        return render_codex_text(evidence)
     if evidence["reporting_version"] == "cycle-report-template-v3":
         return render_visual_report_text(evidence)
     cycle_count = evidence["cycle_count"]
@@ -282,6 +286,16 @@ def validate_report(report: ReportDraft | dict[str, object]) -> ReportDraft:
     """Revalidate frozen copies and nested evidence before persistence or display."""
     value = report.model_dump(mode="json") if isinstance(report, ReportDraft) else report
     parsed = ReportDraft.model_validate(value)
+    if parsed.engine == "codex":
+        from energy_monitor.report_narrative import validate_codex_report
+
+        return validate_codex_report(parsed)
+    if (
+        parsed.status != "generated"
+        or parsed.reporting_version.startswith("cycle-report-codex-")
+        or "codex_review" in parsed.evidence_snapshot
+    ):
+        raise ValueError("template report has an AI review policy or invalid status")
     evidence = parsed.evidence_snapshot
     try:
         canonical = json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False)
