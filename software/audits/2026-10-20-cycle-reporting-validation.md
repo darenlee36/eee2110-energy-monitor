@@ -363,3 +363,50 @@ saved cloud reports, or unexpected public write/AI controls. First allow a compl
 hosted restart to avoid stale imported classes. If still broken, restore the previous
 known-good application revision with a non-destructive revert/redeployment; preserve
 cloud report rows, secrets, laptop reservations and the independent daily checker.
+
+### Hosted verification outcome — v0.2.1
+
+- v0.2.0 release `2957f61` and subsequent caption correction v0.2.1 `e348917`
+  were pushed normally to `main` and the existing development branch, with annotated
+  release tags. No remote work was discarded and no credential values were committed.
+- Fresh full pre-release gate: 226 passed, eight existing upstream deprecation
+  warnings; Ruff clean. The stale caption was reproduced with two failing UI cases,
+  minimally corrected, and both cases passed. Final full gate after correction:
+  **226 passed**, the same eight upstream warnings, Ruff clean.
+- Public app was asleep and was explicitly woken. Initial hot update produced a
+  `components` import KeyError and an old SupabaseCycleStore lacking fetch_reports.
+  Hosted logs confirmed stale classes. A full managed reboot resolved these errors;
+  this was not a schema/credential problem. The later caption-only update rendered
+  correctly without another reboot.
+- At https://eee2110-energy-monitor.streamlit.app/, Live, Cycles and Reports were
+  visited successfully after the restart. Cycles showed simulated completed records.
+  Reports showed cloud history for `sim-esp32-03b248 / tefal-kettle`, including the
+  saved generated Codex review from the native worker. No UI write/generate action
+  or additional live AI call was initiated during browser verification.
+- Confirmed displayed cycle: 122 seconds, simulated energy 0.06834 kWh, qualified
+  charge RM0.030–RM0.037, average power 2050 W, peak 2070 W, average current 8.60 A,
+  voltage 239.1 V, factor 0.997 and frequency 50.00 Hz. Power/current/accumulated-energy
+  charts rendered. A Reset view control was clicked without an app exception.
+- Rule-based insights and saved Codex-selected observations/actions rendered with
+  demonstration disclosure, no diagnosis claim, model not trained and anomaly score
+  Unavailable. Public view explicitly remains read-only; no product generation/edit
+  controls appeared while locked. This is not a fresh owner-password login test.
+- Browser log inspection showed only the earlier expected abnormal WebSocket close
+  at the managed reboot time (17:00:13 UTC); do not describe the entire session as
+  warning-free. No subsequent UI exception was observed during the smoke checks.
+- The default selector can show the older sim-cloud device with no reports; select
+  Monitor / appliance and the sim-esp32 scope to view the generated examples. Switching
+  modes can reset that selection. This remains a navigation caveat, not missing cloud
+  history. No synthetic production records were added to populate the old scope.
+- Laptop worker remained enabled/ready with last native result 0. The separate daily
+  checker was unchanged. Public viewing works without this laptop; new Codex reviews
+  still require the laptop to be awake and signed in. A new phone-width hosted session
+  and physical sleep/resume were not tested in this deployment.
+
+Hosted screenshots: [metrics](screenshots/2026-10-25-hosted-report-metrics.png),
+[graphs](screenshots/2026-10-25-hosted-report-graphs.png),
+[saved AI review](screenshots/2026-10-25-hosted-report-insights.png).
+
+Software checklist remains **60%**: this release does not prove real PZEM flow,
+calibration, labelled real-data collection, Isolation Forest evaluation or the final
+software evaluation/documentation milestone.
