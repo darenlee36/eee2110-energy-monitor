@@ -177,12 +177,16 @@ class CycleAnomalyModel:
     def status(self) -> str:
         return self.metadata["status"]
 
-    def predict(self, features: CycleFeatures, *, testing: bool = False) -> AnomalyPrediction:
+    def predict(self, features: CycleFeatures, *, testing: bool = False,
+                collection_scope: dict | None = None) -> AnomalyPrediction:
         features = CycleFeatures.model_validate(features.model_dump())
         reason = self.status
         if self.estimator is not None:
             if self.status == "test_only" and not testing:
                 reason = "test_only_model"
+            elif (self.metadata.get("collection_scope") is not None and
+                  collection_scope != self.metadata["collection_scope"]):
+                reason = "scope_mismatch"
             elif (features.profile_id, features.device_id) != (
                     self.metadata["profile_id"], self.metadata["device_id"]):
                 reason = "scope_mismatch"

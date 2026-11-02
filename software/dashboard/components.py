@@ -144,7 +144,8 @@ def render_anomaly_assessment(report: dict) -> None:
         "insufficient_data": "Not enough reviewed normal sensor cycles to train a baseline.",
         "test_only_model": "A test-only model cannot assess real appliance behaviour.",
         "quality_excluded": "This cycle has unsuitable data or unverified/simulated origin.",
-        "scope_mismatch": "The saved model belongs to a different appliance or monitor.",
+        "scope_mismatch": "The model requires matching appliance, monitor "
+                          "and recorded operating conditions.",
         "training_cycle": "This cycle was used in training; it is not an independent evaluation.",
     }
     if not predictions:

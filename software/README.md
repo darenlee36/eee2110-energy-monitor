@@ -482,3 +482,30 @@ completion reports after its telemetry receipt. The existing cloud/laptop sweep
 is catch-up; A1 does not install a new cloud webhook or always-on event service.
 Manual exact 5/10/20-cycle comparisons remain available. AI failures retain the
 numerical report; uncertain attempts require review rather than automatic retry.
+
+
+## A2 dataset collection and evaluation preparation
+
+Start with `templates/kettle-cycle-collection.csv` (blank, 16 columns) and
+`docs/kettle-data-collection.md` (practical field procedure, data dictionary,
+recommended targets and offline commands). Enter operator conditions/labels;
+electrical measurements and quality features come from the existing cache.
+Recommended first baseline: 60 eligible normal cycles across six sessions,
+30 train / 10 validation / 20 final test. These are targets, not accuracy guarantees.
+Keep other volumes/starting conditions in separate groups; normal load variation
+is not ground-truth anomalous behaviour.
+
+`python -m energy_monitor.dataset` provides `template`, `prepare`, `review` and
+`evaluate`, with no new package/service/table. Preparation preserves unsuitable
+records for review and freezes full-session chronological splits. It does not
+train, activate, sync cloud data or call AI. Evaluation checks dataset/split/model
+identities, reports verified-normal false alerts, separately verified-unusual
+detection, distributions and uncertainty; unknown labels/zero denominators remain
+unavailable. Threshold review uses validation only and does not alter deployment.
+
+A2-bound models require matching actual collection context in prediction. A1 live
+report scoring without that context returns unavailable rather than applying the
+wrong volume baseline. Context binding/replay rehearsal is the next offline
+checkpoint before the Sunday, 8 November 2026 feature freeze. No production model
+or real detection performance was created by A2. See the detailed audit at
+`audits/2026-11-02-a2-dataset-evaluation.md`.
