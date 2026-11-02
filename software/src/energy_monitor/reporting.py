@@ -44,12 +44,25 @@ class ReportDraft(BaseModel):
 
 def build_report(
     store: SQLiteTelemetryStore, *, profile_id: str, device_id: str,
-    cycle_id: str | None = None, cycle_count: int = 1, anomaly_model=None,
+    cycle_id: str | None = None, cycle_count: int = 1, anomaly_model=None, dataset_context=None,
 ) -> ReportDraft:
-    from energy_monitor.anomaly import configured_model, model_evidence
+    from energy_monitor.anomaly import CycleAnomalyModel, configured_model, model_evidence
+    from energy_monitor.dataset import PreparedDataset, ReportCollectionBinding, bind_report_context
 
+    context_error = None
+    manifest = os.environ.get("ENERGY_MONITOR_DATASET_MANIFEST")
+    if dataset_context is None and manifest:
+        try:
+            dataset_context = PreparedDataset.model_validate_json(
+                Path(manifest).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            context_error = "collection_manifest_unavailable"
+    if dataset_context is not None:
+        dataset_context = PreparedDataset.model_validate(dataset_context.model_dump())
     if anomaly_model is None:
         anomaly_model = configured_model()
+    if anomaly_model is None and (dataset_context is not None or context_error):
+        anomaly_model = CycleAnomalyModel()
     version = "cycle-report-template-v4" if anomaly_model is not None else REPORTING_VERSION
     if type(cycle_count) is not int or cycle_count not in (1, 5, 10, 20):
         raise ValueError("cycle count must be 1, 5, 10 or 20")
@@ -156,6 +169,16 @@ def build_report(
         "limitations": sorted(limitations),
     }
     if anomaly_model is not None:
+        if (dataset_context is not None or context_error or
+            anomaly_model.metadata.get("collection_scope")):
+            for cycle in cycles:
+                if dataset_context is not None:
+                    cycle["collection_context"] = bind_report_context(dataset_context, cycle)
+                else:
+                    binding=ReportCollectionBinding(cycle_id=cycle["cycle_id"],
+                        status="unavailable" if context_error else "missing",
+                        issues=[context_error or "collection_record_missing"])
+                    cycle["collection_context"] = binding.model_dump(mode="json")
         evidence["model"] = model_evidence(anomaly_model, cycles)
         limitations.discard(
             "Isolation Forest is not trained; anomaly evaluation is not evaluated.")
@@ -296,6 +319,13 @@ def render_visual_report_text(evidence: dict[str, object]) -> str:
         lines.extend([
             "", f"## Cycle {index}", "", f"Duration: {cycle['duration_seconds']} seconds."
         ])
+        context=cycle.get("collection_context")
+        if context:
+            lines.append("Collection context: " + context["status"] + ".")
+            if context["scope"]:
+                lines.append(f"Recorded water: {context['scope']['water_volume_ml']:g} mL; "
+                             f"session: {context['session_id']}.")
+                lines.append("Collection source: " + context["dataset_kind"] + ".")
         if cycle["record_source"] == "manual":
             lines.append("Average current: unavailable; electrical averages were not recorded.")
         else:

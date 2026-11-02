@@ -509,3 +509,29 @@ wrong volume baseline. Context binding/replay rehearsal is the next offline
 checkpoint before the Sunday, 8 November 2026 feature freeze. No production model
 or real detection performance was created by A2. See the detailed audit at
 `audits/2026-11-02-a2-dataset-evaluation.md`.
+
+
+## A3 offline integration rehearsal
+
+`tests/test_offline_rehearsal.py` exercises synthetic telemetry -> detection -> A2
+annotations -> test-only model state -> saved numerical/mocked AI reports ->
+fresh-process recovery and Streamlit display. It also checks fresh localhost API
+completion, 5/10/20 comparisons, interruptions and mocked cloud receipt loss.
+No hardware, live AI or production fit is required.
+
+Report generation and `handle_completed_cycle` accept `dataset_context` from A2.
+Optional operator-owned `ENERGY_MONITOR_DATASET_MANIFEST` loads that manifest for
+existing generation entry points. Nothing configures this path automatically.
+Context must match the actual cycle boundaries, readings/features, quality,
+firmware/detector and recording session. Missing/stale/unreviewed context keeps
+numerical evidence but blocks scoped scoring. Public snapshots omit private
+operator/notes/label-evidence fields; AI input additionally omits session IDs.
+
+On an unconfirmed Supabase numerical save, completion orchestration retains an
+explicit local-only report and starts no AI. Retry/catch-up with the same context
+can confirm the existing identity after recovery. It does not claim cloud success
+while offline. Keep caches and durable attempt reservations; uncertain AI attempts
+remain held for review. Native task health is separate from the passing offline
+suite: the installed reporting task still had a missing configured Codex binary
+at the A3 read-only check. See `audits/2026-11-02-a3-offline-integration.md` for the
+verified results, freeze assessment and operational blocker.

@@ -170,6 +170,27 @@ def narrative_catalog(base: ReportDraft | dict) -> dict[str, dict[str, str]]:
                                "peak_power_w", "average_current_a", "average_voltage_v",
                                "average_power_factor", "gap_count", "invalid_sample_count")}
             for c in evidence["cycles"]], "limitations": evidence["limitations"]}
+        conditions=[]
+        for index,cycle in enumerate(evidence["cycles"]):
+            binding=cycle.get("collection_context")
+            if binding is None:
+                continue
+            scope=binding["scope"] if binding["status"] == "bound" else None
+            conditions.append({"cycle_number":index+1,"status":binding["status"],
+                "dataset_kind":binding["dataset_kind"],
+                **({k:scope[k] for k in ("water_volume_ml","start_temperature_band",
+                                        "operating_condition")} if scope else {})})
+            if index in interesting:
+                observations[f"conditions_{index}"]=(
+                    f"Cycle {index+1}: owner-recorded water quantity "
+                    f"{scope['water_volume_ml']:g} mL, "
+                    f"starting water {scope['start_temperature_band']}, "
+                    f"condition {scope['operating_condition'].replace('_',' ')}. "
+                    "These are recorded annotations, not inferred measurements."
+                    if scope else f"Cycle {index+1}: collection context {binding['status']}; "
+                                  "no volume-specific model conclusion is available.")
+        if conditions:
+            catalog["context"]["collection_conditions"]=conditions
     return catalog
 
 

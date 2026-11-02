@@ -249,7 +249,7 @@ def run_reporting_pass(
 
 
 def handle_completed_cycle(
-    store: SQLiteTelemetryStore, cycle_id: str, *, anomaly_model=None,
+    store: SQLiteTelemetryStore, cycle_id: str, *, anomaly_model=None, dataset_context=None,
     provider: Callable | None = None, ai_authorized: bool = False,
     state_dir: Path | None = None, usage_reader: Callable | None = None,
 ) -> dict:
@@ -263,8 +263,17 @@ def handle_completed_cycle(
     if cycle is None or cycle["status"] != "completed":
         raise ValueError("completed cycle required")
     report = build_report(store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
-                          cycle_id=cycle_id, anomaly_model=anomaly_model)
-    numerical_id = store.save_report(report)
+                          cycle_id=cycle_id, anomaly_model=anomaly_model,
+                          dataset_context=dataset_context)
+    from energy_monitor.supabase_sync import SupabaseSyncError
+
+    try:
+        numerical_id = store.save_report(report)
+    except SupabaseSyncError:
+        # Explicit local-only buffer; no cloud confirmation and no AI attempt.
+        numerical_id = SQLiteTelemetryStore.save_report(store,report)
+        return {"numerical_report_id":numerical_id,"ai_status":"network_unavailable",
+                "storage_status":"local_only_cloud_unconfirmed"}
     result = {"numerical_report_id": numerical_id, "ai_status": "not_authorized"}
     if not ai_authorized:
         return result

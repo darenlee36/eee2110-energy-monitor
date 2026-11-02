@@ -214,7 +214,7 @@ class CycleAnomalyModel:
         return AnomalyPrediction(status=reason, data_origin=features.data_origin,
                                  training_status=self.status,
                                  model_version=self.metadata.get("model_version"),
-                                 quality_warnings=features.issues)
+                                 quality_warnings=features.issues+self.metadata.get("warnings", []))
 
     def save(self, path: Path) -> None:
         if self.estimator is None:
@@ -327,8 +327,22 @@ def model_evidence(model: CycleAnomalyModel, cycles: list[dict]) -> dict:
     predictions = []
     for cycle in cycles:
         features = extract_cycle_features(cycle, cycle.get("readings", []))
+        binding=cycle.get("collection_context")
+        invalid_context = binding and (
+            binding["status"] != "bound" or
+            (binding["dataset_kind"] == "synthetic_fixture" and model.status == "trained"))
+        if invalid_context:
+            status = ("quality_excluded" if binding["status"] == "quality_excluded"
+                      else "scope_mismatch")
+            prediction=AnomalyPrediction(status=status,data_origin=features.data_origin,training_status=model.status,
+                model_version=model.metadata.get("model_version"),
+                quality_warnings=(binding["issues"] or ["fixture_context_not_genuine"])
+                                 +model.metadata.get("warnings", []))
+        else:
+            prediction=(model.predict(features,collection_scope=binding["scope"])
+                        if binding else model.predict(features))
         predictions.append({"cycle_id": cycle["cycle_id"],
-                            **model.predict(features).model_dump(mode="json")})
+                            **prediction.model_dump(mode="json")})
     return {"status": model.status, "model_version": model.metadata.get("model_version"),
             "feature_version": FEATURE_VERSION, "normalization": NORMALIZATION,
             "training_count": model.metadata.get("training_count", 0),
@@ -348,6 +362,12 @@ def validate_model_evidence(evidence: dict, cycles: list[dict]) -> None:
         if fields.pop("cycle_id") != cycle["cycle_id"]:
             raise ValueError("model prediction cycle differs")
         prediction = AnomalyPrediction.model_validate(fields)
+        from energy_monitor.dataset import validate_report_binding
+
+        binding=validate_report_binding(cycle)
+        if (prediction.anomaly_score is not None and binding is not None and
+            (binding.status != "bound" or binding.dataset_kind != "sensor_collection")):
+            raise ValueError("unverified collection context cannot display a genuine score")
         if prediction.anomaly_score is not None:
             if (prediction.status != "scored" or evidence["status"] != "trained" or
                 prediction.model_version != evidence["model_version"] or
@@ -368,4 +388,5 @@ def configured_model() -> CycleAnomalyModel | None:
     try:
         return CycleAnomalyModel.load(Path(path), trusted_local=True)
     except ValueError:
-        return CycleAnomalyModel(metadata={"status": "not_trained"})
+        return CycleAnomalyModel(metadata={"status": "not_trained",
+                                           "warnings": ["configured_model_unavailable"]})

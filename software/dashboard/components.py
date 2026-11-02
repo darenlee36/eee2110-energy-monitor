@@ -153,6 +153,8 @@ def render_anomaly_assessment(report: dict) -> None:
     reasons = {messages[p["status"]] for p in predictions if p["status"] in messages}
     for message in sorted(reasons):
         st.caption(message)
+    if any("configured_model_unavailable" in p["quality_warnings"] for p in predictions):
+        st.warning("Configured model unavailable; the numerical report is retained.")
     training = model.get("status", "not_trained").replace("_", " ")
     version = model.get("model_version") or "Unavailable"
     st.caption(f"Training status: {training} · Model: {version}")
@@ -193,6 +195,19 @@ def render_report_dashboard(report: dict) -> None:
         key=f"report_cycle_{report['report_id']}",
     ) if len(cycles) > 1 else 0
     cycle = cycles[selected]
+    binding=cycle.get("collection_context")
+    if binding:
+        if binding["scope"]:
+            scope=binding["scope"]
+            st.caption(f"Recorded water: {scope['water_volume_ml']:,g} mL · "
+                       f"Starting water: {scope['start_temperature_band'].title()} · "
+                       f"{scope['operating_condition'].replace('_',' ').title()}")
+            st.caption(f"Recording session: {binding['session_id']}")
+        if binding["dataset_kind"] == "synthetic_fixture":
+            st.caption("Collection annotations are synthetic fixtures, not real kettle evidence.")
+        if binding["status"] != "bound":
+            st.warning("Collection context is unavailable, mismatched or awaiting review. "
+                       "Numerical readings are retained; model scoring is blocked.")
     st.subheader(f"Cycle {selected + 1} performance")
     st.caption(
         REPORT_SOURCES[_report_source(cycle)][0]

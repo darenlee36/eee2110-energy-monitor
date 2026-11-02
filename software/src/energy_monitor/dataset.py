@@ -33,6 +33,36 @@ from energy_monitor.storage import SQLiteTelemetryStore
 DATASET_VERSION = "kettle-collection-v1"
 
 
+TRACE_FIELDS = (
+    "timestamp",
+    "sample_sequence",
+    "device_uptime_ms",
+    "voltage_v",
+    "current_a",
+    "active_power_w",
+    "cumulative_energy_kwh",
+    "frequency_hz",
+    "power_factor",
+    "quality_status",
+    "firmware_version",
+)
+
+QUALITY_KEYS = (
+    "status",
+    "sample_count",
+    "valid_sample_count",
+    "invalid_sample_count",
+    "missing_sample_count",
+    "gap_count",
+    "largest_gap_seconds",
+    "detection_version",
+)
+
+
+def reading_fingerprint(readings: list[dict]) -> str:
+    return _digest({"readings": [{k: r.get(k) for k in TRACE_FIELDS} for r in readings]})
+
+
 def _digest(value: dict) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -137,6 +167,153 @@ class PreparedDataset(BaseModel):
         return _digest(value)
 
 
+class ReportCollectionBinding(BaseModel):
+    """Public report subset: never persist operator names, notes or label evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+    version: Literal["cycle-context-v1"] = "cycle-context-v1"
+    status: Literal["bound", "missing", "mismatch", "unreviewed", "quality_excluded", "unavailable"]
+    cycle_id: UUID
+    dataset_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    dataset_kind: Literal["sensor_collection", "synthetic_fixture"] | None = None
+    session_id: str | None = None
+    session_started_at: AwareDatetime | None = None
+    scope: dict | None = None
+    reviewed: bool = False
+    raw_trace_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    feature_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    quality_indicators: dict = Field(default_factory=dict)
+    issues: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def coherent_binding(self):
+        if self.status in ("bound", "unreviewed", "quality_excluded"):
+            if not all(
+                (
+                    self.dataset_hash,
+                    self.dataset_kind,
+                    self.session_id,
+                    self.session_started_at,
+                    self.scope,
+                    self.raw_trace_hash,
+                    self.feature_hash,
+                )
+            ):
+                raise ValueError("incomplete collection binding")
+            # Reuse the annotation's primitive condition/time validation only;
+            # private reviewer/label fields are deliberately absent from reports.
+            CollectionRecord(
+                cycle_id=self.cycle_id,
+                session_id=self.session_id,
+                session_started_at=self.session_started_at,
+                **{
+                    k: self.scope[k]
+                    for k in (
+                        "water_volume_ml",
+                        "start_temperature_band",
+                        "operating_condition",
+                        "baseline_group",
+                    )
+                },
+            )
+        if self.status == "bound" and (not self.reviewed or self.issues):
+            raise ValueError("unreviewed or excluded context cannot be bound for scoring")
+        return self
+
+
+def bind_report_context(dataset: PreparedDataset, cycle: dict) -> dict:
+    source = next(
+        (c for c in dataset.cycles if str(c.collection.cycle_id) == cycle["cycle_id"]), None
+    )
+    result = ReportCollectionBinding(
+        status="missing",
+        cycle_id=cycle["cycle_id"],
+        dataset_hash=dataset.digest(),
+        dataset_kind=dataset.kind,
+        issues=["collection_record_missing"],
+    )
+    if source is None:
+        return result.model_dump(mode="json")
+    peers = [
+        c
+        for c in dataset.cycles
+        if (c.device_id, c.profile_id, c.collection.session_id)
+        == (source.device_id, source.profile_id, source.collection.session_id)
+    ]
+    if (
+        source.started_at is None
+        or source.collection.session_started_at > source.started_at
+        or any(
+            c.collection.session_started_at != source.collection.session_started_at for c in peers
+        )
+    ):
+        return result.model_copy(
+            update={"status": "mismatch", "issues": ["collection_session_mismatch"]}
+        ).model_dump(mode="json")
+    features = extract_cycle_features(cycle, cycle.get("readings", []))
+    raw_hash = reading_fingerprint(cycle.get("readings", []))
+    actual_scope = {
+        **source.scope(),
+        "device_id": cycle["device_id"],
+        "profile_id": cycle["profile_id"],
+        "detection_version": cycle["detection_version"],
+        "firmware_versions": sorted({r["firmware_version"] for r in cycle.get("readings", [])}),
+    }
+    if (
+        source.features is None
+        or source.features.model_dump() != features.model_dump()
+        or source.started_at != datetime.fromisoformat(cycle["started_at"])
+        or source.ended_at != datetime.fromisoformat(cycle["ended_at"])
+        or source.scope() != actual_scope
+        or source.quality_indicators.get("raw_trace_hash") != raw_hash
+        or any(source.quality_indicators.get(k) != cycle[k] for k in QUALITY_KEYS)
+    ):
+        return result.model_copy(
+            update={"status": "mismatch", "issues": ["collection_measurements_mismatch"]}
+        ).model_dump(mode="json")
+    flags = sorted(set(source.quality_flags + features.issues))
+    status = (
+        "quality_excluded" if flags else "bound" if source.collection.reviewed else "unreviewed"
+    )
+    return ReportCollectionBinding(
+        status=status,
+        cycle_id=cycle["cycle_id"],
+        dataset_hash=dataset.digest(),
+        dataset_kind=dataset.kind,
+        session_id=source.collection.session_id,
+        session_started_at=source.collection.session_started_at,
+        scope=actual_scope,
+        reviewed=source.collection.reviewed,
+        raw_trace_hash=raw_hash,
+        feature_hash=_digest(features.model_dump(mode="json")),
+        quality_indicators={k: cycle[k] for k in QUALITY_KEYS},
+        issues=flags or ([] if source.collection.reviewed else ["collection_review_pending"]),
+    ).model_dump(mode="json")
+
+
+def validate_report_binding(cycle: dict) -> ReportCollectionBinding | None:
+    if "collection_context" not in cycle:
+        return None
+    binding = ReportCollectionBinding.model_validate(cycle["collection_context"])
+    if str(binding.cycle_id) != cycle["cycle_id"]:
+        raise ValueError("collection context belongs to a different cycle")
+    if binding.status in ("bound", "unreviewed", "quality_excluded"):
+        features = extract_cycle_features(cycle, cycle.get("readings", []))
+        if (
+            binding.scope["device_id"] != cycle["device_id"]
+            or binding.scope["profile_id"] != cycle["profile_id"]
+            or binding.scope["detection_version"] != cycle["detection_version"]
+            or binding.scope["firmware_versions"]
+            != sorted({r["firmware_version"] for r in cycle.get("readings", [])})
+            or binding.session_started_at > datetime.fromisoformat(cycle["started_at"])
+            or binding.raw_trace_hash != reading_fingerprint(cycle.get("readings", []))
+            or binding.feature_hash != _digest(features.model_dump(mode="json"))
+            or binding.quality_indicators != {k: cycle[k] for k in QUALITY_KEYS}
+        ):
+            raise ValueError("collection evidence differs from saved measurements")
+    return binding
+
+
 class SplitPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     version: Literal["session-chronological-v1"] = "session-chronological-v1"
@@ -209,21 +386,8 @@ def prepare_dataset(
             "other",
         ):
             flags.append("operating_conditions_unverified")
-        trace_keys = (
-            "timestamp",
-            "sample_sequence",
-            "device_uptime_ms",
-            "voltage_v",
-            "current_a",
-            "active_power_w",
-            "cumulative_energy_kwh",
-            "frequency_hz",
-            "power_factor",
-            "quality_status",
-            "firmware_version",
-        )
         try:
-            trace_hash = _digest({"readings": [{k: r.get(k) for k in trace_keys} for r in raw]})
+            trace_hash = reading_fingerprint(raw)
         except (TypeError, ValueError):
             trace_hash = None
         cycles.append(
