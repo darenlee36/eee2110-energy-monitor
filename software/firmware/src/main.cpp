@@ -31,6 +31,7 @@ PzemReader reader(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 #endif
 
 #include "telemetry_upload.h"
+#include "sampling_cadence.h"
 
 namespace {
 // GTS Root R4 from https://pki.goog/repo/certs/gtsr4.pem; expires 2036-06-22.
@@ -54,16 +55,19 @@ constexpr std::uint32_t kReconnectIntervalMs = 10000;
 constexpr std::uint64_t kSequenceBlockSize = 1000000;
 constexpr std::size_t kQueueCapacity = 120;
 #if TELEMETRY_SIMULATED
-constexpr char kFirmwareVersion[] = "sim-fw-0.2.3";
+constexpr char kFirmwareVersion[] = "sim-fw-0.2.4";
 #else
-constexpr char kFirmwareVersion[] = "pzem-fw-0.2.3";
+constexpr char kFirmwareVersion[] = "pzem-fw-0.2.4";
 #endif
 
 TelemetryUpload<kQueueCapacity> uploader(DEVICE_ID, PROFILE_ID, kFirmwareVersion);
 Preferences sequencePreferences;
 std::uint64_t nextSequence = 0;
 std::uint64_t sequenceLimit = 0;
-std::uint32_t lastSampleMs = 0;
+SamplingCadence *cadence = nullptr;
+std::uint32_t previousSampleMs = 0;
+bool havePreviousSample = false;
+bool acquisitionReady = false;
 std::uint32_t lastReconnectMs = 0;
 bool ntpConfigured = false;
 bool flushReceiptPrinted = false;
@@ -126,6 +130,7 @@ String createBatchId() {
 
 UploadResponse uploadBatch(const std::string &batchId, const std::string &body) {
   if (WiFi.status() != WL_CONNECTED) return {-1, ""};
+  const std::uint32_t startedMs = millis();
   WiFiClientSecure transport;
   transport.setCACert(kIngestRootCa);
   HTTPClient client;
@@ -138,8 +143,8 @@ UploadResponse uploadBatch(const std::string &batchId, const std::string &body) 
   // Read the receipt before closing the connection. Status alone is not an ack.
   const String receipt = (status == 200 || status == 201) ? client.getString() : String();
   client.end();
-  Serial.printf("Upload HTTP status=%d samples=%u\n", status,
-                static_cast<unsigned>(uploader.pendingCount()));
+  Serial.printf("Upload HTTP status=%d samples=%u duration_ms=%u\n", status,
+                static_cast<unsigned>(uploader.pendingCount()), millis() - startedMs);
   return {status, std::string(receipt.c_str(), receipt.length())};
 }
 
@@ -161,6 +166,22 @@ void readControlCommand() {
       overflow = false;
     } else if (length < sizeof(command) - 1) command[length++] = value;
     else overflow = true;
+  }
+}
+void networkTask(void *) {
+  for (;;) {
+    const std::uint32_t nowMs = millis();
+    if (WiFi.status() == WL_CONNECTED && !ntpConfigured) {
+      configTime(0, 0, "pool.ntp.org", "time.google.com");
+      ntpConfigured = true;
+    } else if (WiFi.status() != WL_CONNECTED &&
+               nowMs - lastReconnectMs >= kReconnectIntervalMs) {
+      lastReconnectMs = nowMs;
+      connectWifi();
+    }
+    uploader.poll(nowMs, WiFi.status() == WL_CONNECTED,
+                  []() { return std::string(createBatchId().c_str()); }, uploadBatch);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 }  // namespace
@@ -186,8 +207,7 @@ void setup() {
     Serial.printf("Hotspot scan: networks=%d saved network=%s\n", networks, found ? "found" : "not found");
     WiFi.scanDelete();
   }
-  connectWifi();
-  lastReconnectMs = millis();
+  lastReconnectMs = millis() - kReconnectIntervalMs;
   Serial.println(TELEMETRY_SIMULATED ? "Simulated telemetry reader" : "PZEM telemetry reader");
   Serial.println("Send flush followed by newline to stop sampling and upload queued readings.");
   if (!configurationIsReady()) {
@@ -195,22 +215,25 @@ void setup() {
   }
   if (!sequenceReady) Serial.println("Sequence storage unavailable; sampling paused.");
   if (!readerReady) Serial.println("Telemetry reader unavailable; sampling paused.");
+  static SamplingCadence fixedCadence(kSampleIntervalMs, millis());
+  cadence = &fixedCadence;
+  // Core 1 owns acquisition/sequence allocation/serial commands. Core 0 owns
+  // Wi-Fi/TLS/HTTP and the frozen retry request. No network call runs in loop().
+  const bool networkReady = xTaskCreatePinnedToCore(
+      networkTask, "telemetry-network", 12288, nullptr, 1, nullptr, 0) == pdPASS;
+  acquisitionReady = sequenceReady && readerReady && networkReady;
+  if (!networkReady) Serial.println("Network worker unavailable; sampling paused.");
 }
 
 void loop() {
   const std::uint32_t nowMs = millis();
   readControlCommand();
-  if (WiFi.status() == WL_CONNECTED && !ntpConfigured) {
-    configTime(0, 0, "pool.ntp.org", "time.google.com");
-    ntpConfigured = true;
-  } else if (
-      WiFi.status() != WL_CONNECTED && nowMs - lastReconnectMs >= kReconnectIntervalMs) {
-    lastReconnectMs = nowMs;
-    connectWifi();
-  }
 
-  if (!uploader.finalFlushRequested() && nowMs - lastSampleMs >= kSampleIntervalMs) {
-    lastSampleMs = nowMs;
+  const auto tick = cadence->poll(nowMs);
+  if (acquisitionReady && !uploader.finalFlushRequested() && tick.due) {
+    if (tick.missedSlots) {
+      Serial.printf("Cadence missed_slots=%u late_ms=%u\n", tick.missedSlots, tick.lateMs);
+    }
     char timestamp[25];
     if (!isoTimestamp(timestamp, sizeof(timestamp))) {
       Serial.println("Clock not synchronized; sample deferred.");
@@ -221,20 +244,22 @@ void loop() {
       reading.connectionState = WiFi.status() == WL_CONNECTED ? "online" : "offline";
       if (assignSequence(reading) && uploader.enqueue(reading)) {
         Serial.printf(
-            "sample=%llu power=%.1fW queued=%u\n",
+            "sample=%llu power=%.1fW queued=%u uptime_ms=%u interval_ms=%u late_ms=%u missed_slots=%u\n",
             static_cast<unsigned long long>(reading.sampleSequence), reading.activePowerW,
-            static_cast<unsigned>(uploader.queued()));
+            static_cast<unsigned>(uploader.queued()), nowMs,
+            havePreviousSample ? nowMs - previousSampleMs : 0, tick.lateMs, tick.missedSlots);
+        previousSampleMs = nowMs;
+        havePreviousSample = true;
       } else {
         Serial.println("Persistent sequence unavailable; sample rejected.");
       }
     }
   }
 
-  uploader.poll(nowMs, WiFi.status() == WL_CONNECTED,
-                []() { return std::string(createBatchId().c_str()); }, uploadBatch);
   if (uploader.finalFlushComplete() && !flushReceiptPrinted) {
     Serial.println("Final flush complete: all queued readings acknowledged by server.");
     Serial.println("This confirms upload only; check cycle completion separately in the dashboard.");
     flushReceiptPrinted = true;
   }
+  delay(1);
 }

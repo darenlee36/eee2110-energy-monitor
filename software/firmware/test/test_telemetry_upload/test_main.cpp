@@ -3,6 +3,11 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <future>
+#include <thread>
+#include "sampling_cadence.h"
+#include <chrono>
+#include <type_traits>
 
 #include "telemetry_upload.h"
 
@@ -218,8 +223,108 @@ void test_retry_backoff_caps_at_sixty_seconds() {
   }
 }
 
+
+void test_slow_send_allows_enqueue_and_atomic_final_flush() {
+  TelemetryUpload<12> upload("device", "profile", "sim-fw-test");
+  TEST_ASSERT_FALSE((std::is_copy_constructible<TelemetryUpload<12>>::value));
+  for (unsigned i = 1; i <= 6; ++i) upload.enqueue(reading(i, i * 5000));
+  std::promise<void> entered, release;
+  auto released = release.get_future();
+  std::string frozen;
+  auto network = std::async(std::launch::async, [&]() {
+    upload.poll(30000, true, []() { return std::string("slow"); },
+      [&](const std::string &, const std::string &payload) {
+        frozen = payload;
+        entered.set_value();
+        released.wait();
+        return UploadResponse{201, R"({"data":{"batch_id":"slow","accepted":6,"duplicates":0,"replayed":false}})"};
+      });
+  });
+  entered.get_future().wait();
+  auto producer = std::async(std::launch::async, [&]() {
+    bool ok = true;
+    for (unsigned i = 7; i <= 12; ++i) ok = upload.enqueue(reading(i, i * 5000)) && ok;
+    ok = !upload.enqueue(reading(13, 65000)) && ok;
+    upload.requestFinalFlush();
+    return ok && !upload.enqueue(reading(14, 70000)) && !upload.finalFlushComplete();
+  });
+  const bool unblocked = producer.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+  release.set_value();
+  network.get();
+  TEST_ASSERT_TRUE(unblocked);
+  TEST_ASSERT_TRUE(producer.get());
+  TEST_ASSERT_EQUAL_UINT32(6, upload.queued());
+  JsonDocument payload;
+  deserializeJson(payload, frozen);
+  TEST_ASSERT_EQUAL_UINT32(6, payload["readings"].size());
+  TEST_ASSERT_EQUAL_UINT64(6, payload["readings"][5]["sample_sequence"].as<std::uint64_t>());
+  upload.poll(70000, true, []() { return std::string("tail"); },
+    [](const std::string &, const std::string &body) {
+      JsonDocument values;
+      deserializeJson(values, body);
+      TEST_ASSERT_EQUAL_UINT64(7, values["readings"][0]["sample_sequence"].as<std::uint64_t>());
+      return UploadResponse{201, R"({"data":{"batch_id":"tail","accepted":6,"duplicates":0,"replayed":false}})"};
+    });
+  TEST_ASSERT_TRUE(upload.finalFlushComplete());
+}
+
+
+void test_concurrent_ring_wrap_slow_retries_and_reconnect_preserve_every_sample() {
+  TelemetryUpload<12> upload("device", "profile", "sim-fw-test");
+  std::vector<std::uint64_t> delivered;
+  bool integrity = true;
+  auto network = std::async(std::launch::async, [&]() {
+    unsigned ids = 0, passes = 0;
+    std::string lastId, lastBody;
+    bool failedOnce = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!upload.finalFlushComplete() && std::chrono::steady_clock::now() < deadline) {
+      ++passes;
+      upload.poll(passes * 1000, passes % 7 != 0,
+        [&]() { return std::to_string(++ids); },
+        [&](const std::string &id, const std::string &body) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          if (id != lastId) {
+            lastId = id; lastBody = body; failedOnce = false;
+          }
+          integrity = integrity && lastBody == body;
+          if (!failedOnce) { failedOnce = true; return UploadResponse{-11, ""}; }
+          JsonDocument doc;
+          deserializeJson(doc, body);
+          for (JsonObject value : doc["readings"].as<JsonArray>())
+            delivered.push_back(value["sample_sequence"].as<std::uint64_t>());
+          const auto count = doc["readings"].size();
+          return UploadResponse{200, "{\"data\":{\"batch_id\":\"" + id +
+            "\",\"accepted\":" + std::to_string(count) + ",\"duplicates\":0,\"replayed\":true}}"};
+        });
+      std::this_thread::yield();
+    }
+    return upload.finalFlushComplete();
+  });
+  SamplingCadence cadence(5000, 0);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+  unsigned collected = 0;
+  for (unsigned i = 1; i <= 600; ++i) {
+    // Virtual acquisition clock is independent of the blocked network task.
+    if (!cadence.poll(i * 5000).due) break;
+    while (!upload.enqueue(reading(i, i * 5000)) &&
+           std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+    if (std::chrono::steady_clock::now() >= deadline) break;
+    ++collected;
+  }
+  upload.requestFinalFlush();
+  TEST_ASSERT_TRUE(network.get());
+  TEST_ASSERT_TRUE(integrity);
+  TEST_ASSERT_EQUAL_UINT32(600, collected);
+  TEST_ASSERT_EQUAL_UINT32(600, delivered.size());
+  for (unsigned i = 0; i < delivered.size(); ++i)
+    TEST_ASSERT_EQUAL_UINT64(i + 1, delivered[i]);
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
+  RUN_TEST(test_concurrent_ring_wrap_slow_retries_and_reconnect_preserve_every_sample);
+  RUN_TEST(test_slow_send_allows_enqueue_and_atomic_final_flush);
   RUN_TEST(test_full_batch_sends_before_partial_deadline);
   RUN_TEST(test_each_partial_size_waits_for_oldest_reading_deadline);
   RUN_TEST(test_offline_lost_ack_retry_freezes_exact_request_with_new_samples);

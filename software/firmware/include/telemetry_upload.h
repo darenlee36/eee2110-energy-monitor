@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <mutex>
 
 #include "telemetry_queue.h"
 
@@ -24,28 +25,42 @@ class TelemetryUpload {
   }
 
   bool enqueue(const TelemetryReading &reading) {
+    std::lock_guard<std::mutex> lock(mutex_);
     return !finalFlushRequested_ && queue_.push(reading);
   }
-  bool full() const { return queue_.full(); }
-  std::size_t queued() const { return queue_.size(); }
-  std::size_t pendingCount() const { return pendingCount_; }
-  void requestFinalFlush() { finalFlushRequested_ = true; }
-  bool finalFlushRequested() const { return finalFlushRequested_; }
+  bool full() const { std::lock_guard<std::mutex> lock(mutex_); return queue_.full(); }
+  std::size_t queued() const { std::lock_guard<std::mutex> lock(mutex_); return queue_.size(); }
+  std::size_t pendingCount() const {
+    std::lock_guard<std::mutex> lock(mutex_); return pendingCount_;
+  }
+  void requestFinalFlush() {
+    std::lock_guard<std::mutex> lock(mutex_); finalFlushRequested_ = true;
+  }
+  bool finalFlushRequested() const {
+    std::lock_guard<std::mutex> lock(mutex_); return finalFlushRequested_;
+  }
   bool finalFlushComplete() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return finalFlushRequested_ && queue_.size() == 0 && pendingCount_ == 0;
   }
 
+  // One network consumer calls poll; sampling/flush may run concurrently.
+  // The mutex never spans serialization, transport or receipt parsing.
   // Only the transport is injected: native tests exercise the same scheduler,
   // serializer, frozen request and receipt validation used by the ESP32.
   template <typename MakeId, typename Send>
   void poll(std::uint32_t nowMs, bool online, MakeId makeId, Send send) {
-    if (!online || queue_.size() == 0) return;
+    if (!online || queued() == 0) return;
     if (retryScheduled_ && nowMs - lastFailureMs_ < retryDelayMs_) return;
     if (pendingCount_ == 0) {
       TelemetryReading readings[kBatchSize]{};
-      const std::size_t count = queue_.copyFront(readings, kBatchSize);
-      if (count < kBatchSize && !finalFlushRequested_ &&
-          nowMs - readings[0].deviceUptimeMs < kPartialAgeMs) return;
+      std::size_t count;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        count = queue_.copyFront(readings, kBatchSize);
+        if (count == 0 || (count < kBatchSize && !finalFlushRequested_ &&
+            nowMs - readings[0].deviceUptimeMs < kPartialAgeMs)) return;
+      }
       const std::string id = makeId();
       if (id.empty()) return;
       JsonDocument document;
@@ -81,13 +96,16 @@ class TelemetryUpload {
         return;
       }
       batchId_ = id;
-      pendingCount_ = count;
+      { std::lock_guard<std::mutex> lock(mutex_); pendingCount_ = count; }
     }
 
     const UploadResponse response = send(batchId_, payload_);
     if (acknowledged(response)) {
-      queue_.popFront(pendingCount_);
-      pendingCount_ = 0;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.popFront(pendingCount_);
+        pendingCount_ = 0;
+      }
       batchId_.clear();
       payload_.clear();
       retryScheduled_ = false;
@@ -125,6 +143,7 @@ class TelemetryUpload {
   const char *deviceId_;
   const char *profileId_;
   const char *firmwareVersion_;
+  mutable std::mutex mutex_;
   TelemetryQueue<Capacity> queue_;
   std::string batchId_;
   std::string payload_;

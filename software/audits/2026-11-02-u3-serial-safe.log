@@ -1,0 +1,243 @@
+2026-11-02T06:03:04.329766+00:00 MONITOR opened COM3
+2026-11-02T06:03:04.481259+00:00 CONTROL USB board reset for startup capture
+2026-11-02T06:03:04.485846+00:00 ets Jul 29 2019 12:21:46
+2026-11-02T06:03:04.491356+00:00 rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+2026-11-02T06:03:04.504468+00:00 load:0x3fff0030,len:1184
+2026-11-02T06:03:04.508004+00:00 load:0x40078000,len:13232
+2026-11-02T06:03:04.508957+00:00 load:0x40080400,len:3028
+2026-11-02T06:03:04.508957+00:00 entry 0x400805e4
+2026-11-02T06:03:06.691308+00:00 Hotspot scan: networks=5 saved network=found
+2026-11-02T06:03:06.699445+00:00 Simulated telemetry reader
+2026-11-02T06:03:06.703759+00:00 Send flush followed by newline to stop sampling and upload queued readings.
+2026-11-02T06:03:07.067493+00:00 WiFi connected; IP assigned.
+2026-11-02T06:03:11.706333+00:00 sample=46000001 power=0.0W queued=1 uptime_ms=6808 interval_ms=0 late_ms=0 missed_slots=0
+2026-11-02T06:03:16.706821+00:00 sample=46000002 power=0.0W queued=2 uptime_ms=11808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:21.707467+00:00 sample=46000003 power=0.0W queued=3 uptime_ms=16808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:26.707005+00:00 sample=46000004 power=0.0W queued=4 uptime_ms=21808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:36.707441+00:00 sample=46000006 power=0.0W queued=6 uptime_ms=31808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:41.707451+00:00 sample=46000007 power=2063.1W queued=7 uptime_ms=36808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:45.390412+00:00 Upload HTTP status=201 samples=6 duration_ms=8674
+2026-11-02T06:03:46.707252+00:00 sample=46000008 power=2069.8W queued=2 uptime_ms=41808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:03:56.707778+00:00 sample=46000010 power=2039.1W queued=4 uptime_ms=51808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:01.707314+00:00 sample=46000011 power=2030.0W queued=5 uptime_ms=56808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:06.707182+00:00 sample=46000012 power=2039.3W queued=6 uptime_ms=61808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:11.707792+00:00 sample=46000013 power=2058.4W queued=7 uptime_ms=66808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:14.638133+00:00 Upload HTTP status=201 samples=6 duration_ms=7920
+2026-11-02T06:04:16.708534+00:00 sample=46000014 power=2069.8W queued=2 uptime_ms=71808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:21.707776+00:00 sample=46000015 power=2063.0W queued=3 uptime_ms=76808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:31.707265+00:00 sample=46000017 power=2030.8W queued=5 uptime_ms=86808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:36.706678+00:00 sample=46000018 power=2035.0W queued=6 uptime_ms=91808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:41.708688+00:00 sample=46000019 power=2053.0W queued=7 uptime_ms=96808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:44.850533+00:00 Upload HTTP status=201 samples=6 duration_ms=8137
+2026-11-02T06:04:46.707501+00:00 sample=46000020 power=2068.3W queued=2 uptime_ms=101808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:51.708523+00:00 sample=46000021 power=2066.7W queued=3 uptime_ms=106808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:04:56.708164+00:00 sample=46000022 power=2049.8W queued=4 uptime_ms=111808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:01.707943+00:00 sample=46000023 power=2033.1W queued=5 uptime_ms=116808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:06.707723+00:00 sample=46000024 power=2031.9W queued=6 uptime_ms=121808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:11.707950+00:00 sample=46000025 power=2047.4W queued=7 uptime_ms=126808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:15.573789+00:00 Upload HTTP status=201 samples=6 duration_ms=8859
+2026-11-02T06:05:16.708249+00:00 sample=46000026 power=2065.3W queued=2 uptime_ms=131808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:21.708099+00:00 sample=46000027 power=2069.1W queued=3 uptime_ms=136808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:26.708601+00:00 sample=46000028 power=2055.4W queued=4 uptime_ms=141808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:31.708025+00:00 sample=46000029 power=2036.7W queued=5 uptime_ms=146808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:41.708673+00:00 sample=46000031 power=0.0W queued=7 uptime_ms=156808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:44.385708+00:00 Upload HTTP status=201 samples=6 duration_ms=7670
+2026-11-02T06:05:46.708534+00:00 sample=46000032 power=0.0W queued=2 uptime_ms=161808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:51.708614+00:00 sample=46000033 power=0.0W queued=3 uptime_ms=166808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:05:56.708580+00:00 sample=46000034 power=0.0W queued=4 uptime_ms=171808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:01.708972+00:00 sample=46000035 power=0.0W queued=5 uptime_ms=176808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:06.709021+00:00 sample=46000036 power=0.0W queued=6 uptime_ms=181808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:11.709107+00:00 sample=46000037 power=0.0W queued=7 uptime_ms=186808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:14.360925+00:00 Upload HTTP status=201 samples=6 duration_ms=7641
+2026-11-02T06:06:16.710338+00:00 sample=46000038 power=0.0W queued=2 uptime_ms=191808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:21.709232+00:00 sample=46000039 power=0.0W queued=3 uptime_ms=196808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:26.709574+00:00 sample=46000040 power=0.0W queued=4 uptime_ms=201808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:36.709662+00:00 sample=46000042 power=0.0W queued=6 uptime_ms=211808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:41.709321+00:00 sample=46000043 power=2033.4W queued=7 uptime_ms=216808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:42.917239+00:00 Upload HTTP status=201 samples=6 duration_ms=6201
+2026-11-02T06:06:46.709158+00:00 sample=46000044 power=2050.4W queued=2 uptime_ms=221808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:51.709382+00:00 sample=46000045 power=2067.0W queued=3 uptime_ms=226808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:06:56.709631+00:00 sample=46000046 power=2068.0W queued=4 uptime_ms=231808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:01.708821+00:00 sample=46000047 power=2052.5W queued=5 uptime_ms=236808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:06.709747+00:00 sample=46000048 power=2034.6W queued=6 uptime_ms=241808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:11.709578+00:00 sample=46000049 power=2030.9W queued=7 uptime_ms=246808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:12.923294+00:00 Upload HTTP status=201 samples=6 duration_ms=6206
+2026-11-02T06:07:16.709717+00:00 sample=46000050 power=2044.8W queued=2 uptime_ms=251808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:21.710264+00:00 sample=46000051 power=2063.4W queued=3 uptime_ms=256808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:26.709586+00:00 sample=46000052 power=2069.7W queued=4 uptime_ms=261808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:31.710696+00:00 sample=46000053 power=2057.9W queued=5 uptime_ms=266808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:36.709602+00:00 sample=46000054 power=2038.8W queued=6 uptime_ms=271808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:41.710217+00:00 sample=46000055 power=2030.0W queued=7 uptime_ms=276808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:45.127225+00:00 Upload HTTP status=201 samples=6 duration_ms=8410
+2026-11-02T06:07:46.710062+00:00 sample=46000056 power=2039.6W queued=2 uptime_ms=281808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:51.711036+00:00 sample=46000057 power=2058.7W queued=3 uptime_ms=286808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:07:56.709133+00:00 sample=46000058 power=2069.9W queued=4 uptime_ms=291808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:01.710718+00:00 sample=46000059 power=2062.7W queued=5 uptime_ms=296808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:06.710811+00:00 sample=46000060 power=2043.9W queued=6 uptime_ms=301808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:11.710724+00:00 sample=46000061 power=2030.7W queued=7 uptime_ms=306808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:15.294691+00:00 Upload HTTP status=201 samples=6 duration_ms=8582
+2026-11-02T06:08:16.711206+00:00 sample=46000062 power=2035.2W queued=2 uptime_ms=311808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:21.710500+00:00 sample=46000063 power=2053.3W queued=3 uptime_ms=316808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:26.713624+00:00 sample=46000064 power=2068.4W queued=4 uptime_ms=321808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:31.710356+00:00 sample=46000065 power=2066.5W queued=5 uptime_ms=326808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:36.710321+00:00 sample=46000066 power=2049.5W queued=6 uptime_ms=331808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:41.710326+00:00 sample=46000067 power=2032.9W queued=7 uptime_ms=336808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:43.235469+00:00 Upload HTTP status=201 samples=6 duration_ms=6522
+2026-11-02T06:08:46.710342+00:00 sample=46000068 power=2032.0W queued=2 uptime_ms=341808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:51.710950+00:00 sample=46000069 power=2047.7W queued=3 uptime_ms=346808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:08:56.711477+00:00 sample=46000070 power=2065.5W queued=4 uptime_ms=351808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:01.711060+00:00 sample=46000071 power=2069.0W queued=5 uptime_ms=356808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:06.711612+00:00 sample=46000072 power=2055.1W queued=6 uptime_ms=361808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:11.711439+00:00 sample=46000073 power=0.0W queued=7 uptime_ms=366808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:13.500831+00:00 Upload HTTP status=201 samples=6 duration_ms=6784
+2026-11-02T06:09:16.711334+00:00 sample=46000074 power=0.0W queued=2 uptime_ms=371808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:21.711156+00:00 sample=46000075 power=0.0W queued=3 uptime_ms=376808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:26.711558+00:00 sample=46000076 power=0.0W queued=4 uptime_ms=381808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:31.711820+00:00 sample=46000077 power=0.0W queued=5 uptime_ms=386808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:36.711679+00:00 sample=46000078 power=0.0W queued=6 uptime_ms=391808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:38.844052+00:00 WiFi disconnect reason=200
+2026-11-02T06:09:40.686551+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:40.737668+00:00 Upload HTTP status=-1 samples=6 duration_ms=4015
+2026-11-02T06:09:41.711752+00:00 sample=46000079 power=2041.1W queued=7 uptime_ms=396808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:42.601151+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:44.444899+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:46.087261+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:46.711109+00:00 sample=46000080 power=2030.1W queued=8 uptime_ms=401808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:47.931100+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:49.784409+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:51.710707+00:00 sample=46000081 power=2037.4W queued=9 uptime_ms=406808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:52.606776+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:54.451236+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:56.292643+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:56.711613+00:00 sample=46000082 power=2056.3W queued=10 uptime_ms=411808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:09:58.136085+00:00 WiFi disconnect reason=201
+2026-11-02T06:09:59.980020+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:01.712047+00:00 sample=46000083 power=2069.4W queued=11 uptime_ms=416808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:02.611638+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:04.254683+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:06.098872+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:06.711781+00:00 sample=46000084 power=2064.7W queued=12 uptime_ms=421808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:07.941672+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:09.785074+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:11.712119+00:00 sample=46000085 power=2046.5W queued=13 uptime_ms=426808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:12.617843+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:14.260442+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:16.104127+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:16.712676+00:00 sample=46000086 power=2031.5W queued=14 uptime_ms=431808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:17.947644+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:19.790374+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:21.712172+00:00 sample=46000087 power=2033.6W queued=15 uptime_ms=436808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:22.623355+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:24.472295+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:26.310327+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:26.712583+00:00 sample=46000088 power=2050.7W queued=16 uptime_ms=441808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:28.160840+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:29.999341+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:31.712206+00:00 sample=46000089 power=2067.2W queued=17 uptime_ms=446808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:32.631439+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:34.475303+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:36.317844+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:36.713726+00:00 sample=46000090 power=2067.9W queued=18 uptime_ms=451808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:38.162218+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:40.005721+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:41.713120+00:00 sample=46000091 power=2052.1W queued=19 uptime_ms=456808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:42.436893+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:44.280856+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:46.124156+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:46.712265+00:00 sample=46000092 power=2034.4W queued=20 uptime_ms=461808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:47.967431+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:49.810410+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:51.711997+00:00 sample=46000093 power=2031.0W queued=21 uptime_ms=466808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:52.646930+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:54.486455+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:56.332051+00:00 WiFi disconnect reason=201
+2026-11-02T06:10:56.712155+00:00 sample=46000094 power=2045.1W queued=22 uptime_ms=471808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:10:58.173361+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:00.017338+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:01.712606+00:00 sample=46000095 power=2063.7W queued=23 uptime_ms=476808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:02.651124+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:04.493127+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:06.336308+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:06.713974+00:00 sample=46000096 power=2069.7W queued=24 uptime_ms=481808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:08.179980+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:09.822406+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:11.714049+00:00 sample=46000097 power=2057.6W queued=25 uptime_ms=486808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:12.656217+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:14.298206+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:16.141296+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:16.713249+00:00 sample=46000098 power=2038.5W queued=26 uptime_ms=491808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:17.984187+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:19.827042+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:21.718407+00:00 sample=46000099 power=2030.0W queued=27 uptime_ms=496808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:22.658503+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:24.502312+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:26.345186+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:26.712894+00:00 sample=46000100 power=2039.9W queued=28 uptime_ms=501808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:28.189828+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:30.032134+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:31.712693+00:00 sample=46000101 power=2059.0W queued=29 uptime_ms=506808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:32.666117+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:34.305552+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:36.158546+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:36.714149+00:00 sample=46000102 power=2069.9W queued=30 uptime_ms=511808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:38.004187+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:39.841483+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:41.713174+00:00 sample=46000103 power=0.0W queued=31 uptime_ms=516808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:42.666824+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:44.509658+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:46.352355+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:46.713149+00:00 sample=46000104 power=0.0W queued=32 uptime_ms=521808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:48.195801+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:50.038211+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:51.713759+00:00 sample=46000105 power=0.0W queued=33 uptime_ms=526808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:52.672167+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:54.315271+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:55.957612+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:56.713154+00:00 sample=46000106 power=0.0W queued=34 uptime_ms=531808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:11:57.799834+00:00 WiFi disconnect reason=201
+2026-11-02T06:11:59.643661+00:00 WiFi disconnect reason=201
+2026-11-02T06:12:01.304973+00:00 WiFi connected; IP assigned.
+2026-11-02T06:12:01.713480+00:00 sample=46000107 power=0.0W queued=35 uptime_ms=536808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:06.713917+00:00 sample=46000108 power=0.0W queued=36 uptime_ms=541808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:10.938696+00:00 Upload HTTP status=201 samples=6 duration_ms=9628
+2026-11-02T06:12:11.713492+00:00 sample=46000109 power=0.0W queued=31 uptime_ms=546808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:16.720234+00:00 sample=46000110 power=0.0W queued=32 uptime_ms=551808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:18.011396+00:00 Upload HTTP status=201 samples=6 duration_ms=7051
+2026-11-02T06:12:21.714690+00:00 sample=46000111 power=0.0W queued=27 uptime_ms=556808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:23.980365+00:00 Upload HTTP status=201 samples=6 duration_ms=5946
+2026-11-02T06:12:26.713181+00:00 sample=46000112 power=0.0W queued=22 uptime_ms=561808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:29.883472+00:00 Upload HTTP status=201 samples=6 duration_ms=5881
+2026-11-02T06:12:31.713727+00:00 sample=46000113 power=0.0W queued=17 uptime_ms=566808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:36.108031+00:00 Upload HTTP status=201 samples=6 duration_ms=6203
+2026-11-02T06:12:36.713897+00:00 sample=46000114 power=0.0W queued=12 uptime_ms=571808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:41.713682+00:00 sample=46000115 power=2068.9W queued=13 uptime_ms=576808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:42.885622+00:00 Upload HTTP status=201 samples=6 duration_ms=6755
+2026-11-02T06:12:46.713497+00:00 sample=46000116 power=2054.7W queued=8 uptime_ms=581808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:48.728252+00:00 Upload HTTP status=201 samples=6 duration_ms=5820
+2026-11-02T06:12:51.714082+00:00 sample=46000117 power=2036.2W queued=3 uptime_ms=586808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:12:56.714923+00:00 sample=46000118 power=2030.4W queued=4 uptime_ms=591808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:01.714148+00:00 sample=46000119 power=2042.6W queued=5 uptime_ms=596808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:06.714311+00:00 sample=46000120 power=2061.6W queued=6 uptime_ms=601808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:11.714729+00:00 sample=46000121 power=2070.0W queued=7 uptime_ms=606808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:13.821317+00:00 Upload HTTP status=201 samples=6 duration_ms=7095
+2026-11-02T06:13:16.718978+00:00 sample=46000122 power=2060.0W queued=2 uptime_ms=611808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:21.714537+00:00 sample=46000123 power=2040.8W queued=3 uptime_ms=616808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:26.714437+00:00 sample=46000124 power=2030.1W queued=4 uptime_ms=621808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:31.714146+00:00 sample=46000125 power=2037.7W queued=5 uptime_ms=626808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:36.714496+00:00 sample=46000126 power=2056.6W queued=6 uptime_ms=631808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:41.714504+00:00 sample=46000127 power=2069.5W queued=7 uptime_ms=636808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:43.313575+00:00 Upload HTTP status=201 samples=6 duration_ms=6591
+2026-11-02T06:13:46.715166+00:00 sample=46000128 power=2064.4W queued=2 uptime_ms=641808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:51.714796+00:00 sample=46000129 power=2046.1W queued=3 uptime_ms=646808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:13:56.715115+00:00 sample=46000130 power=2031.4W queued=4 uptime_ms=651808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:14:01.715188+00:00 sample=46000131 power=2033.8W queued=5 uptime_ms=656808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:14:06.715615+00:00 sample=46000132 power=2051.1W queued=6 uptime_ms=661808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:14:11.714997+00:00 sample=46000133 power=2067.4W queued=7 uptime_ms=666808 interval_ms=5000 late_ms=0 missed_slots=0
+2026-11-02T06:14:11.928204+00:00 CONTROL flush sent
+2026-11-02T06:14:11.936709+00:00 Final flush requested; sampling stopped. Waiting for server receipts.
+2026-11-02T06:14:13.716459+00:00 Upload HTTP status=201 samples=6 duration_ms=6992
+2026-11-02T06:14:20.896177+00:00 Upload HTTP status=201 samples=1 duration_ms=7162
+2026-11-02T06:14:20.905134+00:00 Final flush complete: all queued readings acknowledged by server.
+2026-11-02T06:14:20.910306+00:00 This confirms upload only; check cycle completion separately in the dashboard.
+2026-11-02T06:16:59.415264+00:00 CONTROL monitor stopped; board firmware is not stopped
+2026-11-02T06:16:59.415264+00:00 MONITOR capture ended

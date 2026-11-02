@@ -17,7 +17,7 @@ simulated ESP32 readings -> ingestion API -> raw telemetry
 ```
 
 One five-second record is one sample. A typical two-to-three-minute boil therefore contains
-roughly 24–36 samples, which the backend combines into one kettle cycle. Raw telemetry remains
+roughly 24â€“36 samples, which the backend combines into one kettle cycle. Raw telemetry remains
 the source of truth and reprocessing the same data does not duplicate the cycle.
 
 ## Included
@@ -69,13 +69,13 @@ py -m venv .venv
 
 Open three PowerShell terminals in this directory.
 
-Terminal 1 — start the ingestion API:
+Terminal 1 â€” start the ingestion API:
 
 ```powershell
 .\scripts\start-local-api.ps1
 ```
 
-Terminal 2 — upload one deterministic normal kettle cycle:
+Terminal 2 â€” upload one deterministic normal kettle cycle:
 
 ```powershell
 .\scripts\run-simulator.ps1
@@ -86,7 +86,7 @@ It crosses multiple upload batches but is stored as one completed cycle. Alterna
 fixtures are available with `--scenario incomplete_gap`, `--scenario short_spike`, or
 `--scenario stream`.
 
-Terminal 3 — start the dashboard:
+Terminal 3 â€” start the dashboard:
 
 ```powershell
 .\scripts\start-dashboard.ps1
@@ -144,7 +144,7 @@ and authenticated browser clients cannot execute them. Local/demo edits stay loc
 
 Public cloud visitors can view and export records but cannot edit. Set a separate random
 `ENERGY_MONITOR_EDIT_PASSWORD` in the dashboard server environment (Streamlit Secrets on the
-hosted site). Use **Owner controls → Unlock editing** to enable edits for that browser session,
+hosted site). Use **Owner controls â†’ Unlock editing** to enable edits for that browser session,
 and **Lock editing** when finished. Missing owner configuration fails closed to viewing only.
 This is a single-owner password gate, not a multi-user account/role system. Keep the password in
 a password manager; do not reuse the device token or Supabase key.
@@ -237,9 +237,28 @@ receipts are outstanding. Reboot to start another measurement after a final flus
 
 The queue and frozen request are **RAM only**: a reset or sudden power loss can lose unsent
 measurements. Persistent sequence allocation prevents identifier reuse, not sample loss.
-HTTP calls remain synchronous and can delay sampling during slow network requests; five
-seconds is the nominal cadence. Flash-backed recovery and a dashboard/OLED flush control
-are outside U1. OLED work follows this reliability checkpoint.
+### Sampling cadence (U3)
+
+Firmware 0.2.4 keeps acquisition, sequence allocation and serial commands on the Arduino
+loop (core 1). One built-in FreeRTOS task on core 0 owns reconnects, NTP setup, TLS/HTTP,
+and the immutable retry request. The existing FIFO is protected by a standard mutex;
+serialization, HTTP and receipt parsing run outside the queue lock. Only that worker
+may call `poll`; acquisition and final-flush requests may run concurrently.
+
+Five-second deadlines keep their original phase rather than drifting after each upload.
+A delayed loop takes one measurement at the actual current UTC/uptime; it reports missed
+slots rather than inventing readings for the past. Serial sample diagnostics include
+`uptime_ms`, `interval_ms` (zero for the first sample), `late_ms` and `missed_slots`.
+Upload diagnostics include request duration. UTC retains the existing second-resolution
+contract; use uptime differences for millisecond cadence measurements. Clock-not-ready,
+full-queue and reader/sequence failures remain explicit deferrals, not saved measurements.
+
+This isolates network blocking, not every possible delay: reader calls, flash/NVS,
+serial backpressure, OS scheduling and clock adjustments still need measurement. The
+120-reading queue is roughly ten minutes at nominal cadence, not unlimited outage
+protection. Native thread tests cannot establish physical timing or PZEM latency.
+Flash-backed recovery and dashboard/OLED flush controls remain outside this checkpoint.
+OLED work waits for U3 review.
 
 Native verification (existing PlatformIO installation; no device required):
 
@@ -289,7 +308,7 @@ The separate manual Codex review below is opt-in; this numerical worker never in
 it. No paid API or product reporting schedule is enabled. Simulated and manual cycles
 are development evidence only, never real-sensor or model-training validation.
 
-### Manual laptop Codex review — 24 October 2026
+### Manual laptop Codex review â€” 24 October 2026
 
 The first AI stage is **Codex-selected insights**, not free-form AI-authored prose.
 Python builds eligible observations/actions from a saved template; Codex selects their
@@ -329,7 +348,7 @@ public deployment was performed. Reports displays saved AI selections or failure
 warnings; opening/refreshing it never invokes Codex. The public dashboard cannot start
 an AI call. Off-laptop generation and any failed-review retry policy remain decision-gated.
 
-### Guarded laptop schedule — 25 October 2026
+### Guarded laptop schedule â€” 25 October 2026
 
 Approved cadence: every **30 minutes**, with at most **one** pending individual-cycle
 Codex review per pass. Existing exact 5/10/20-cycle batch options remain manual;
@@ -383,7 +402,7 @@ or refresh invokes AI, and no public deployment is implied by local scheduling.
 
 ## Visual reports and remaining work
 
-### Visual reporting checkpoint — 21 October 2026
+### Visual reporting checkpoint â€” 21 October 2026
 
 Template v3 keeps the cycle's electrical readings inside the immutable report evidence,
 so the chart view does not depend on a surviving telemetry cache. It adds readable
@@ -392,11 +411,11 @@ v1/v2 reports remain readable and are not overwritten. Manual entries do not gai
 electrical averages or reading traces.
 
 Reports now shows an actual anomaly score of **Unavailable**. Under **Preview the score
-display**, enable **Show sample score (demo only)** to try an illustrative 0–100 slider
+display**, enable **Show sample score (demo only)** to try an illustrative 0â€“100 slider
 (initially 72). The sample is not calculated from the selected cycle, is not a fault
 probability and is never saved into report evidence or training data.
 
-### Visual report dashboard — 23 October 2026
+### Visual report dashboard â€” 23 October 2026
 
 Reports presents duration, energy and qualified cost alongside average/peak power,
 average current, voltage, power factor and frequency for the selected cycle. Power,
