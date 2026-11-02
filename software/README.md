@@ -203,13 +203,51 @@ optional because the PZEM does not provide it.
 ## Delivery behaviour
 
 - One reading is sampled every five seconds and up to six readings are sent per request.
+- Full six-reading batches send normally. A smaller batch becomes eligible when its oldest
+  reading reaches 30 seconds, even if no further readings arrive (subject to Wi-Fi and retry delay).
 - A fixed 120-reading RAM queue buffers about ten minutes of readings.
-- A failed request retains the same batch ID and retries with one-to-sixty-second backoff.
+- An in-flight request freezes its batch ID, count and serialized payload. New readings wait
+  behind that prefix; a failed request retries the exact same request with one-to-sixty-second
+  backoff. Wi-Fi loss leaves the queued readings untouched.
+- HTTP 200/201 alone does not remove readings. The JSON receipt must match the batch ID, include
+  integer accepted/duplicate counts totalling the pending count, and include a replay flag.
+  Missing, malformed, mismatched or incomplete receipts retain the batch, including when the
+  server may have committed but the response was lost. Existing backend idempotency handles replay.
 - The ESP32 reserves non-overlapping sequence-number blocks in non-volatile storage, preventing
   reboot reuse without writing flash for every sample.
 - Readings are not created until NTP supplies a plausible UTC clock.
 - When the queue is full, new samples are deferred until delivery resumes. Flash-backed telemetry
   buffering can be added later if field testing requires outages longer than ten minutes.
+
+### Controlled final flush (U1)
+
+After the measurement has ended **and enough idle readings have been collected for cycle
+closure**, send `flush` followed by a newline over the existing 115200-baud serial console.
+This latches final-flush mode: no new readings are sampled, Wi-Fi reconnection continues,
+and full plus partial queued batches drain with the same receipt/retry rules. Wait for:
+
+```text
+Final flush complete: all queued readings acknowledged by server.
+```
+
+This confirms storage acknowledgement for the queued readings only. Confirm the completed
+cycle in the dashboard separately; it does not confirm report generation, model validity,
+electrical safety, or readings that were never collected. Do not disconnect power while
+receipts are outstanding. Reboot to start another measurement after a final flush.
+
+The queue and frozen request are **RAM only**: a reset or sudden power loss can lose unsent
+measurements. Persistent sequence allocation prevents identifier reuse, not sample loss.
+HTTP calls remain synchronous and can delay sampling during slow network requests; five
+seconds is the nominal cadence. Flash-backed recovery and a dashboard/OLED flush control
+are outside U1. OLED work follows this reliability checkpoint.
+
+Native verification (existing PlatformIO installation; no device required):
+
+```powershell
+$env:PLATFORMIO_BUILD_DIR = 'C:\pio-build\eee2110-u1-reliability'
+platformio test -d firmware -e native
+platformio run -d firmware -e esp32dev -j 1
+```
 
 ## Cycle reports and one-shot laptop worker
 

@@ -30,7 +30,7 @@ MeterReader reader;
 PzemReader reader(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 #endif
 
-#include "telemetry_queue.h"
+#include "telemetry_upload.h"
 
 namespace {
 // GTS Root R4 from https://pki.goog/repo/certs/gtsr4.pem; expires 2036-06-22.
@@ -51,26 +51,22 @@ p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
 )PEM";
 constexpr std::uint32_t kSampleIntervalMs = 5000;
 constexpr std::uint32_t kReconnectIntervalMs = 10000;
-constexpr std::uint32_t kMaximumRetryMs = 60000;
 constexpr std::uint64_t kSequenceBlockSize = 1000000;
-constexpr std::size_t kBatchSize = 6;
 constexpr std::size_t kQueueCapacity = 120;
 #if TELEMETRY_SIMULATED
-constexpr char kFirmwareVersion[] = "sim-fw-0.2.2";
+constexpr char kFirmwareVersion[] = "sim-fw-0.2.3";
 #else
-constexpr char kFirmwareVersion[] = "pzem-fw-0.2.2";
+constexpr char kFirmwareVersion[] = "pzem-fw-0.2.3";
 #endif
 
-TelemetryQueue<kQueueCapacity> queue;
+TelemetryUpload<kQueueCapacity> uploader(DEVICE_ID, PROFILE_ID, kFirmwareVersion);
 Preferences sequencePreferences;
 std::uint64_t nextSequence = 0;
 std::uint64_t sequenceLimit = 0;
 std::uint32_t lastSampleMs = 0;
 std::uint32_t lastReconnectMs = 0;
-std::uint32_t nextUploadAttemptMs = 0;
-std::uint32_t retryDelayMs = 1000;
-String pendingBatchId;
 bool ntpConfigured = false;
+bool flushReceiptPrinted = false;
 
 bool configurationIsReady() {
   return String(WIFI_SSID) != "CHANGE_ME" && String(DEVICE_INGEST_TOKEN) != "CHANGE_ME" &&
@@ -128,78 +124,44 @@ String createBatchId() {
   return String(value);
 }
 
-bool uploadBatch(
-    const TelemetryReading *readings, std::size_t count, const String &batchId) {
-  if (WiFi.status() != WL_CONNECTED) return false;
-
-  JsonDocument document;
-  document["batch_id"] = batchId;
-  JsonArray jsonReadings = document["readings"].to<JsonArray>();
-  for (std::size_t index = 0; index < count; ++index) {
-    const TelemetryReading &reading = readings[index];
-    JsonObject value = jsonReadings.add<JsonObject>();
-    value["device_id"] = DEVICE_ID;
-    value["profile_id"] = PROFILE_ID;
-    value["timestamp"] = reading.timestamp;
-    value["sample_sequence"] = reading.sampleSequence;
-    value["device_uptime_ms"] = reading.deviceUptimeMs;
-    value["voltage_v"] = reading.voltageV;
-    value["current_a"] = reading.currentA;
-    value["active_power_w"] = reading.activePowerW;
-    value["cumulative_energy_kwh"] = reading.cumulativeEnergyKwh;
-    value["frequency_hz"] = reading.frequencyHz;
-    value["power_factor"] = reading.powerFactor;
-    value["appliance_state"] = reading.applianceState;
-    if (reading.hasBatteryVoltage) {
-      value["battery_voltage_v"] = reading.batteryVoltageV;
-    } else {
-      value["battery_voltage_v"] = nullptr;
-    }
-    value["connection_state"] = reading.connectionState;
-    value["anomaly_status"] = reading.anomalyStatus;
-    value["quality_status"] = reading.qualityStatus;
-    value["firmware_version"] = kFirmwareVersion;
-  }
-
-  String body;
-  serializeJson(document, body);
+UploadResponse uploadBatch(const std::string &batchId, const std::string &body) {
+  if (WiFi.status() != WL_CONNECTED) return {-1, ""};
   WiFiClientSecure transport;
   transport.setCACert(kIngestRootCa);
   HTTPClient client;
   client.setTimeout(8000);
-  if (!client.begin(transport, INGEST_URL)) return false;
+  if (!client.begin(transport, INGEST_URL)) return {-1, ""};
   client.addHeader("Content-Type", "application/json");
-  client.addHeader("Idempotency-Key", batchId);
+  client.addHeader("Idempotency-Key", batchId.c_str());
   client.addHeader("x-device-token", DEVICE_INGEST_TOKEN);
-  const int status = client.POST(body);
+  const int status = client.POST(String(body.c_str()));
+  // Read the receipt before closing the connection. Status alone is not an ack.
+  const String receipt = (status == 200 || status == 201) ? client.getString() : String();
   client.end();
-  Serial.printf("Upload HTTP status=%d samples=%u\n", status, static_cast<unsigned>(count));
-  return status == 200 || status == 201;
+  Serial.printf("Upload HTTP status=%d samples=%u\n", status,
+                static_cast<unsigned>(uploader.pendingCount()));
+  return {status, std::string(receipt.c_str(), receipt.length())};
 }
 
-bool uploadIsDue(std::uint32_t nowMs) {
-  return static_cast<std::int32_t>(nowMs - nextUploadAttemptMs) >= 0;
-}
-
-void sendQueuedBatch(std::uint32_t nowMs) {
-  if (queue.size() < kBatchSize || WiFi.status() != WL_CONNECTED || !uploadIsDue(nowMs)) {
-    return;
+void readControlCommand() {
+  static char command[6]{};
+  static std::size_t length = 0;
+  static bool overflow = false;
+  // Bound work per loop so continuous serial input cannot starve uploads.
+  for (unsigned i = 0; i < 32 && Serial.available(); ++i) {
+    const char value = static_cast<char>(Serial.read());
+    if (value == '\r') continue;
+    if (value == '\n') {
+      command[length] = '\0';
+      if (!overflow && strcmp(command, "flush") == 0) {
+        uploader.requestFinalFlush();
+        Serial.println("Final flush requested; sampling stopped. Waiting for server receipts.");
+      }
+      length = 0;
+      overflow = false;
+    } else if (length < sizeof(command) - 1) command[length++] = value;
+    else overflow = true;
   }
-
-  TelemetryReading readings[kBatchSize]{};
-  const std::size_t count = queue.copyFront(readings, kBatchSize);
-  if (pendingBatchId.isEmpty()) pendingBatchId = createBatchId();
-  if (uploadBatch(readings, count, pendingBatchId)) {
-    queue.popFront(count);
-    pendingBatchId = "";
-    retryDelayMs = 1000;
-    nextUploadAttemptMs = nowMs;
-    return;
-  }
-
-  nextUploadAttemptMs = nowMs + retryDelayMs;
-  retryDelayMs = min(retryDelayMs * 2, kMaximumRetryMs);
-  Serial.printf("Upload deferred; %u readings queued.\n", static_cast<unsigned>(queue.size()));
 }
 }  // namespace
 
@@ -227,6 +189,7 @@ void setup() {
   connectWifi();
   lastReconnectMs = millis();
   Serial.println(TELEMETRY_SIMULATED ? "Simulated telemetry reader" : "PZEM telemetry reader");
+  Serial.println("Send flush followed by newline to stop sampling and upload queued readings.");
   if (!configurationIsReady()) {
     Serial.println("Copy local_secrets.example.h to local_secrets.h before network upload.");
   }
@@ -236,6 +199,7 @@ void setup() {
 
 void loop() {
   const std::uint32_t nowMs = millis();
+  readControlCommand();
   if (WiFi.status() == WL_CONNECTED && !ntpConfigured) {
     configTime(0, 0, "pool.ntp.org", "time.google.com");
     ntpConfigured = true;
@@ -245,26 +209,32 @@ void loop() {
     connectWifi();
   }
 
-  if (nowMs - lastSampleMs >= kSampleIntervalMs) {
+  if (!uploader.finalFlushRequested() && nowMs - lastSampleMs >= kSampleIntervalMs) {
     lastSampleMs = nowMs;
     char timestamp[25];
     if (!isoTimestamp(timestamp, sizeof(timestamp))) {
       Serial.println("Clock not synchronized; sample deferred.");
-    } else if (queue.full()) {
+    } else if (uploader.full()) {
       Serial.println("Telemetry queue full; sample deferred until upload succeeds.");
     } else {
       TelemetryReading reading = reader.read(nowMs, timestamp);
       reading.connectionState = WiFi.status() == WL_CONNECTED ? "online" : "offline";
-      if (assignSequence(reading) && queue.push(reading)) {
+      if (assignSequence(reading) && uploader.enqueue(reading)) {
         Serial.printf(
             "sample=%llu power=%.1fW queued=%u\n",
             static_cast<unsigned long long>(reading.sampleSequence), reading.activePowerW,
-            static_cast<unsigned>(queue.size()));
+            static_cast<unsigned>(uploader.queued()));
       } else {
         Serial.println("Persistent sequence unavailable; sample rejected.");
       }
     }
   }
 
-  sendQueuedBatch(nowMs);
+  uploader.poll(nowMs, WiFi.status() == WL_CONNECTED,
+                []() { return std::string(createBatchId().c_str()); }, uploadBatch);
+  if (uploader.finalFlushComplete() && !flushReceiptPrinted) {
+    Serial.println("Final flush complete: all queued readings acknowledged by server.");
+    Serial.println("This confirms upload only; check cycle completion separately in the dashboard.");
+    flushReceiptPrinted = true;
+  }
 }
