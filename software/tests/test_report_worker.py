@@ -253,8 +253,10 @@ def test_native_schedule_plan_is_disabled_bounded_and_has_no_credentials():
     assert plan["LogonType"] == "Interactive"
     assert plan["RunLevel"] == "Limited"
     assert not plan["Enabled"]
-    assert "--allow-one-codex-call" in plan["Arguments"]
-    assert "--device-id sim-esp32-03b248" in plan["Arguments"]
+    assert "--allow-one-codex-call" in plan["WorkerArguments"]
+    assert "-Action Worker" in plan["Arguments"]
+    assert "--codex-executable" not in plan["Arguments"]
+    assert "--device-id sim-esp32-03b248" in plan["WorkerArguments"]
     assert "SECRET" not in plan["Arguments"] and "TOKEN" not in plan["Arguments"]
 
 

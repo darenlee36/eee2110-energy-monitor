@@ -1,34 +1,79 @@
 param(
-    [ValidateSet('Plan', 'Install', 'Enable', 'Disable', 'Status', 'Run')]
+    [ValidateSet('Plan', 'Install', 'Enable', 'Disable', 'Status', 'Run', 'Worker')]
     [string]$Action = 'Status',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,64}$')]
     [string]$ProfileId = 'tefal-kettle',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,64}$')]
     [string]$DeviceId = 'sim-esp32-03b248',
-    [string]$CodexExecutable
+    [string]$CodexExecutable,
+    [string]$RuntimeRoot,
+    [ValidateSet('local', 'supabase')]
+    [string]$Source = 'supabase',
+    [string]$Database,
+    [string]$StateDirectory,
+    [switch]$NoAI
 )
 $ErrorActionPreference = 'Stop'
 $softwareRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).Path
+if (-not $RuntimeRoot) { $RuntimeRoot = $softwareRoot }
+$RuntimeRoot = (Resolve-Path -LiteralPath $RuntimeRoot).Path
 $taskName = 'EnergyMonitor-CycleReporting'
-$description = "Energy Monitor guarded laptop reporting | $softwareRoot"
-$python = Join-Path $softwareRoot '.venv\Scripts\pythonw.exe'
-$database = Join-Path $softwareRoot 'data\reporting-worker-cache.db'
-$state = Join-Path $softwareRoot 'data\reporting-worker'
-$arguments = '-m energy_monitor.report_worker --source supabase --database "{0}" --state-dir "{1}" --profile-id {2} --device-id {3} --allow-one-codex-call' -f $database, $state, $ProfileId, $DeviceId
-if (-not $CodexExecutable) {
-    $CodexExecutable = (Get-Command codex.exe -ErrorAction SilentlyContinue).Source
-    if (-not $CodexExecutable -and $Action -ne 'Plan') {
-        $installed = Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
-        if ($installed -and $installed.Actions[0].Arguments -match ' --codex-executable "([^"]+)"$') {
-            $CodexExecutable = $Matches[1]
+$description = "Energy Monitor guarded laptop reporting | $RuntimeRoot"
+$python = Join-Path $RuntimeRoot '.venv\Scripts\python.exe'
+$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not $Database) { $Database = Join-Path $RuntimeRoot 'data\reporting-worker-cache.db' }
+if (-not $StateDirectory) { $StateDirectory = Join-Path $RuntimeRoot 'data\reporting-worker' }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Project Python environment missing.' }
+
+function Resolve-ReportingCodex([string]$Explicit, [string]$BinRoot) {
+    if ($Explicit) {
+        if (-not [IO.Path]::IsPathRooted($Explicit) -or
+            -not (Test-Path -LiteralPath $Explicit -PathType Leaf) -or
+            [IO.Path]::GetExtension($Explicit) -ne '.exe') {
+            throw 'Existing absolute Codex executable required.'
         }
+        return (Resolve-Path -LiteralPath $Explicit).Path
     }
+    $command = Get-Command codex.exe -ErrorAction SilentlyContinue
+    if ($command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+        return $command.Source
+    }
+    if (-not $BinRoot) { $BinRoot = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin' }
+    if (-not (Test-Path -LiteralPath $BinRoot -PathType Container)) { return $null }
+    # App updates replace version directories. Never persist one in the task action.
+    $candidates = Get-ChildItem -LiteralPath $BinRoot -Directory | ForEach-Object {
+        $candidate = Join-Path $_.FullName 'codex.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { Get-Item -LiteralPath $candidate }
+    }
+    $latest = $candidates | Sort-Object LastWriteTimeUtc, FullName -Descending | Select-Object -First 1
+    if ($latest) { return $latest.FullName }
+    return $null
 }
-if (-not $CodexExecutable -or -not (Test-Path -LiteralPath $CodexExecutable -PathType Leaf)) {
-    throw 'Codex executable missing. Pass -CodexExecutable with its existing absolute path.'
+
+$resolvedCodex = Resolve-ReportingCodex -Explicit $CodexExecutable
+$workerArguments = @('-m', 'energy_monitor.report_worker', '--source', $Source,
+    '--database', $Database, '--state-dir', $StateDirectory,
+    '--profile-id', $ProfileId, '--device-id', $DeviceId)
+if ($NoAI) { $workerArguments += '--no-ai' } else { $workerArguments += '--allow-one-codex-call' }
+if ($resolvedCodex) { $workerArguments += @('--codex-executable', $resolvedCodex) }
+$envFile = Join-Path $RuntimeRoot '.env'
+if (Test-Path -LiteralPath $envFile -PathType Leaf) { $workerArguments += @('--env-file', $envFile) }
+
+if ($Action -eq 'Worker') {
+    # Scope imports to this checkout without repointing the shared editable venv.
+    # Preserve the installed database/credential/attempt-journal root separately.
+    $previousPythonPath = $env:PYTHONPATH
+    try {
+        $env:PYTHONPATH = Join-Path $softwareRoot 'src'
+        if ($previousPythonPath) { $env:PYTHONPATH += [IO.Path]::PathSeparator + $previousPythonPath }
+        & $python @workerArguments
+        $workerExit = $LASTEXITCODE
+    } finally { $env:PYTHONPATH = $previousPythonPath }
+    exit $workerExit
 }
-$arguments += ' --codex-executable "{0}"' -f $CodexExecutable
-if (-not (Test-Path -LiteralPath $python)) { throw 'Project Python environment missing.' }
+
+$arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Action Worker -RuntimeRoot "{1}" -ProfileId {2} -DeviceId {3} -Source {4} -Database "{5}" -StateDirectory "{6}"' -f $PSCommandPath, $RuntimeRoot, $ProfileId, $DeviceId, $Source, $Database, $StateDirectory
+if ($NoAI) { $arguments += ' -NoAI' }
 
 function Assert-ReportingTaskSafety($Definition) {
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -55,7 +100,7 @@ function Assert-ReportingTaskSafety($Definition) {
 
 if ($Action -in 'Plan', 'Install') {
     if ([datetime]::Now -ge [datetime]'2026-12-07T00:00:00') { throw 'Reporting period expired.' }
-    $taskAction = New-ScheduledTaskAction -Execute $python -Argument $arguments -WorkingDirectory $softwareRoot
+    $taskAction = New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $RuntimeRoot
     $trigger = New-ScheduledTaskTrigger -Once -At ([datetime]::Now.AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 30)
     $trigger.EndBoundary = '2026-12-07T00:00:00+08:00'
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -66,6 +111,8 @@ if ($Action -in 'Plan', 'Install') {
         [pscustomobject]@{
             TaskName = $taskName; Executable = $taskAction.Execute
             Arguments = $taskAction.Arguments; WorkingDirectory = $taskAction.WorkingDirectory
+            WorkerArguments = ($workerArguments -join ' '); CodexExecutable = $resolvedCodex
+            ExecutionMode = $(if ($NoAI) { 'no_ai' } else { 'guarded_ai' })
             Interval = $trigger.Repetition.Interval; EndBoundary = $trigger.EndBoundary
             StartWhenAvailable = $settings.StartWhenAvailable; WakeToRun = $settings.WakeToRun
             MultipleInstances = [string]$settings.MultipleInstances; Enabled = $settings.Enabled
@@ -83,7 +130,7 @@ if (-not $task) {
     if ($Action -eq 'Status') { Write-Output 'Reporting task not installed.'; return }
     throw 'Reporting task not installed.'
 }
-if ($task.Description -ne $description -or $task.Actions.Count -ne 1 -or $task.Actions[0].Execute -ne $python -or $task.Actions[0].WorkingDirectory -ne $softwareRoot -or $task.Actions[0].Arguments -ne $arguments) {
+if ($task.Description -ne $description -or $task.Actions.Count -ne 1 -or $task.Actions[0].Execute -ne $powershell -or $task.Actions[0].WorkingDirectory -ne $RuntimeRoot -or $task.Actions[0].Arguments -ne $arguments) {
     throw 'Task ownership/configuration differs. No change made.'
 }
 switch ($Action) {

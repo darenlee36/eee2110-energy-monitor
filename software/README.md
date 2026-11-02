@@ -376,7 +376,7 @@ From `software/`, inspect/manage only the dedicated native Windows task:
 ```
 
 Task `EnergyMonitor-CycleReporting` uses the logged-in user's limited privileges,
-`pythonw.exe` (no console), no wake-up, no overlapping instances, and a ten-minute
+a hidden PowerShell launcher, no wake-up, no overlapping instances, and a ten-minute
 execution limit. It may run on battery, so normal laptop battery consumption applies.
 It runs only while Windows is awake and this user is signed in; screen-off is fine.
 `StartWhenAvailable` requests missed-run recovery after availability; the worker then
@@ -535,3 +535,27 @@ remain held for review. Native task health is separate from the passing offline
 suite: the installed reporting task still had a missing configured Codex binary
 at the A3 read-only check. See `audits/2026-11-02-a3-offline-integration.md` for the
 verified results, freeze assessment and operational blocker.
+
+
+### Installed launcher repair - 2 November 2026
+
+The old task failed with exit 2 because an app update removed its pinned Codex
+executable. The existing scheduling script now resolves Codex at each worker start
+from PATH or the installed app's version directories; the task no longer stores a
+version-specific binary path. It explicitly loads this checkout's source while
+preserving the installed runtime's Python environment, credential-file path,
+database, device/profile scope and AI reservation journal.
+
+The installed task is currently **enabled in numerical-only `-NoAI` mode**. Two
+native starts returned 0; the latest completed at 18:35:10 MYT on 2 November.
+This mode syncs existing cloud data and catches up missing numerical cycle reports;
+it does not query Codex quota, reserve an AI attempt or invoke inference. It is not
+a zero-write simulation. Re-enabling live guarded AI requires a separate approved
+mode change; no live AI generation was verified during this repair.
+
+The 30-minute trigger, signed-in user/limited privileges, no-wake, overlap protection,
+expiry and ten-minute limit are unchanged. Existing 5/10/20-cycle manual comparison
+options and AI quota/duplicate safeguards remain intact. Keep both this checkout
+(the launcher/source) and the original runtime/data directory available. The daily
+ChatGPT progress checker was not changed. See
+[audit](audits/2026-11-02-reporting-launcher-repair.md) for evidence and limitations.

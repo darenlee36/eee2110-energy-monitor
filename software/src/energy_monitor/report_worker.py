@@ -175,6 +175,7 @@ def run_reporting_pass(
     store: SQLiteTelemetryStore, *, profile_id: str, device_id: str, state_dir: Path,
     usage_reader: Callable | None = None, runner: Callable | None = None,
     prepare: Callable | None = None, now: datetime | None = None, report_id: str | None = None,
+    allow_ai: bool = True,
 ) -> dict:
     from energy_monitor.report_narrative import run_codex
 
@@ -204,6 +205,12 @@ def run_reporting_pass(
                 candidates = (build_report(
                     store, profile_id=profile_id, device_id=device_id, cycle_id=cycle["cycle_id"]
                 ) for cycle in reversed(store.fetch_report_cycles(profile_id, device_id)))
+            if not allow_ai:
+                executable = codex_executable()
+                return _save_status(state_dir, {**result, "status": "no_ai", "ai_enabled": False,
+                    "worker_source": str(Path(__file__).resolve()),
+                    "codex_executable": executable,
+                    "codex_executable_found": bool(executable and Path(executable).is_file())})
             for base in candidates:
                 target = str(codex_review_id(base))
                 if store.fetch_report(target) is not None:
@@ -318,7 +325,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", required=True, choices=("local", "supabase"))
     parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--codex-executable", type=Path)
-    parser.add_argument("--allow-one-codex-call", required=True, action="store_true")
+    parser.add_argument("--env-file", type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--allow-one-codex-call", action="store_true")
+    mode.add_argument("--no-ai", action="store_true",
+                      help="Numerical cycle catch-up only; no Codex/quota/provider calls")
     args = parser.parse_args(argv)
     if args.codex_executable is not None:
         if not args.codex_executable.is_absolute() or not args.codex_executable.is_file():
@@ -331,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(_save_status(args.state_dir, {"status": "expired", "ai_attempts": 0})))
         return 0
     # Only the trusted parent reads cloud credentials; model subprocesses get a minimal env.
-    load_dotenv(Path(__file__).parents[2] / ".env")
+    load_dotenv(args.env_file or Path(__file__).parents[2] / ".env")
     try:
         config = SupabaseConfig.from_environment() if args.source == "supabase" else None
         if args.source == "supabase" and config is None:
@@ -341,13 +352,15 @@ def main(argv: list[str] | None = None) -> int:
         result = run_reporting_pass(
             store, profile_id=args.profile_id, device_id=args.device_id, state_dir=args.state_dir,
             prepare=(lambda: prepare_cloud(store, config)) if config else None,
+            allow_ai=not args.no_ai,
         )
     except (SupabaseSyncError, OSError, ValueError, sqlite3.Error):
         # Do not print underlying HTTP exceptions, evidence or credential-bearing config.
         print(json.dumps({"status": "error", "message": "Reporting failed; check local status"}))
         return 1
     print(json.dumps(result))
-    return 0 if result["status"] in ("completed", "idle", "already_running", "expired") else 1
+    success = ("completed", "idle", "already_running", "expired", "no_ai")
+    return 0 if result["status"] in success else 1
 
 
 if __name__ == "__main__":

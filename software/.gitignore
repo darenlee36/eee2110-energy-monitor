@@ -12,3 +12,4 @@ data/esp32-backups/
 firmware/include/local_secrets.h
 firmware/include/local_hardware.h
 firmware/.pio/
+data/launcher-repair-*/
