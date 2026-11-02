@@ -1,0 +1,711 @@
+{
+  "notice": "Physical ESP32 delivery test; electrical values are simulated, not PZEM measurements or training evidence. Read-only Supabase export, 2 November 2026.",
+  "batches": [
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "06d7cc1c-f41a-4bd5-be31-308ab4d48f88",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:12:55.063785+00:00",
+      "completed_at": "2026-11-02T05:12:55.859+00:00",
+      "request_hash": "fc3f6b96fff74e66608717d94d4d913176b0604c6405be9672e44cba8c6f7d30"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "7005a692-2360-4873-9c28-87be0feacae0",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:13:28.333363+00:00",
+      "completed_at": "2026-11-02T05:13:28.895+00:00",
+      "request_hash": "cd81f130226c0d5f0849170693cc458ec83f1b3bd9e567a09ccab9e3b9d10545"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "c9089e0f-3181-42d1-99ee-88ca22898afa",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:14:01.901767+00:00",
+      "completed_at": "2026-11-02T05:14:03.066+00:00",
+      "request_hash": "1272726997b587ce3c377b15a4b54635a3992a46856acccd3866fe84558b2ada"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "ae477f60-1ef1-4a42-ad86-b880fc70c6d2",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:03.633012+00:00",
+      "completed_at": "2026-11-02T05:17:03.995+00:00",
+      "request_hash": "892045cdab0fed50f60d40a016d8bdc3275d810d793c5950d41ac5e5d18270b2"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "2e35cc28-a817-498e-86f3-783f8e479a7c",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:11.36476+00:00",
+      "completed_at": "2026-11-02T05:17:12.48+00:00",
+      "request_hash": "238a1b619b6e3e13311ca171ff3e2d008c6ca0fd40c10e1ad270a030fe5ed1e9"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "e7aa5b46-701d-4f11-84d4-cef03c7a6538",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:19.618758+00:00",
+      "completed_at": "2026-11-02T05:17:20.726+00:00",
+      "request_hash": "d50fb71a68a0c12399821d52070826dae5c1cd7a09803e8c8a50fc5aee7ce816"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "573c1bf1-30a9-435f-a8fe-262f567a84c6",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:27.342027+00:00",
+      "completed_at": "2026-11-02T05:17:27.971+00:00",
+      "request_hash": "f7ad4a4d92c6e1740f54c6f5101d1f3d27ea904fd7c5f59b46854d5435ed9121"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "532aa80e-8886-44c2-a595-4ada3b413da0",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:34.814892+00:00",
+      "completed_at": "2026-11-02T05:17:35.363+00:00",
+      "request_hash": "b8d1491754d2b841a3eaa544fbdfd041a045e537c578127c51c7b2108451def3"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "65ab2752-9d7e-4931-9981-ed3fec8dac94",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:17:42.369739+00:00",
+      "completed_at": "2026-11-02T05:17:42.926+00:00",
+      "request_hash": "9109f9f85d84ac70b5c6fb3a91bd0f4b1b3e65a0ace0a80ac7427e4505bee6f0"
+    },
+    {
+      "state": "completed",
+      "accepted": 5,
+      "batch_id": "11d158c9-cdc3-4339-9c77-bc118f9f694a",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:18:04.711698+00:00",
+      "completed_at": "2026-11-02T05:18:05.044+00:00",
+      "request_hash": "46954b1221903ea304cd29975955f2611d296aa68569b7c1c8420e02b475a281"
+    },
+    {
+      "state": "completed",
+      "accepted": 6,
+      "batch_id": "ca609f06-7a9a-4897-89dc-8d86e5c7fb34",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:18:37.098425+00:00",
+      "completed_at": "2026-11-02T05:18:37.795+00:00",
+      "request_hash": "ed97c7499add5432f67bddc60e1f589eb00baac942c55a1b60cd848ff737d952"
+    },
+    {
+      "state": "completed",
+      "accepted": 1,
+      "batch_id": "63ead439-dfc5-40dc-8ed9-bacb7a392c06",
+      "duplicates": 0,
+      "received_at": "2026-11-02T05:18:46.597177+00:00",
+      "completed_at": "2026-11-02T05:18:46.924+00:00",
+      "request_hash": "ae63b0a9494eb52efd55ffdfbf0f173aeb46d11321a1593e34504bd3e8319946"
+    }
+  ],
+  "readings": [
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:22+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000001,
+      "connection_state": "online",
+      "device_uptime_ms": 5000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:27+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000002,
+      "connection_state": "online",
+      "device_uptime_ms": 10000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:32+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000003,
+      "connection_state": "online",
+      "device_uptime_ms": 15000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:37+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000004,
+      "connection_state": "online",
+      "device_uptime_ms": 20000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:42+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000005,
+      "connection_state": "online",
+      "device_uptime_ms": 25000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:12:55.741938+00:00",
+      "recorded_at": "2026-11-02T05:12:47+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000006,
+      "connection_state": "online",
+      "device_uptime_ms": 30000,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:12:56+00:00",
+      "active_power_w": 2063.14,
+      "sample_sequence": 42000007,
+      "connection_state": "online",
+      "device_uptime_ms": 39156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:13:01+00:00",
+      "active_power_w": 2069.787,
+      "sample_sequence": 42000008,
+      "connection_state": "online",
+      "device_uptime_ms": 44156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:13:06+00:00",
+      "active_power_w": 2058.242,
+      "sample_sequence": 42000009,
+      "connection_state": "online",
+      "device_uptime_ms": 49156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:13:11+00:00",
+      "active_power_w": 2039.12,
+      "sample_sequence": 42000010,
+      "connection_state": "online",
+      "device_uptime_ms": 54156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:13:16+00:00",
+      "active_power_w": 2030,
+      "sample_sequence": 42000011,
+      "connection_state": "online",
+      "device_uptime_ms": 59156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:13:28.694186+00:00",
+      "recorded_at": "2026-11-02T05:13:21+00:00",
+      "active_power_w": 2039.269,
+      "sample_sequence": 42000012,
+      "connection_state": "online",
+      "device_uptime_ms": 64156,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:30+00:00",
+      "active_power_w": 2058.403,
+      "sample_sequence": 42000013,
+      "connection_state": "online",
+      "device_uptime_ms": 72657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:35+00:00",
+      "active_power_w": 2069.812,
+      "sample_sequence": 42000014,
+      "connection_state": "online",
+      "device_uptime_ms": 77657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:40+00:00",
+      "active_power_w": 2063.006,
+      "sample_sequence": 42000015,
+      "connection_state": "online",
+      "device_uptime_ms": 82657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:45+00:00",
+      "active_power_w": 2044.242,
+      "sample_sequence": 42000016,
+      "connection_state": "online",
+      "device_uptime_ms": 87657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:50+00:00",
+      "active_power_w": 2030.772,
+      "sample_sequence": 42000017,
+      "connection_state": "online",
+      "device_uptime_ms": 92657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:14:02.847738+00:00",
+      "recorded_at": "2026-11-02T05:13:55+00:00",
+      "active_power_w": 2034.98,
+      "sample_sequence": 42000018,
+      "connection_state": "online",
+      "device_uptime_ms": 97657,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:08+00:00",
+      "active_power_w": 2052.998,
+      "sample_sequence": 42000019,
+      "connection_state": "online",
+      "device_uptime_ms": 111278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:13+00:00",
+      "active_power_w": 2068.259,
+      "sample_sequence": 42000020,
+      "connection_state": "offline",
+      "device_uptime_ms": 116278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:18+00:00",
+      "active_power_w": 2066.733,
+      "sample_sequence": 42000021,
+      "connection_state": "offline",
+      "device_uptime_ms": 121278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:23+00:00",
+      "active_power_w": 2049.823,
+      "sample_sequence": 42000022,
+      "connection_state": "offline",
+      "device_uptime_ms": 126278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:28+00:00",
+      "active_power_w": 2033.076,
+      "sample_sequence": 42000023,
+      "connection_state": "offline",
+      "device_uptime_ms": 131278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:03.895034+00:00",
+      "recorded_at": "2026-11-02T05:14:33+00:00",
+      "active_power_w": 2031.888,
+      "sample_sequence": 42000024,
+      "connection_state": "offline",
+      "device_uptime_ms": 136278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:14:38+00:00",
+      "active_power_w": 2047.353,
+      "sample_sequence": 42000025,
+      "connection_state": "offline",
+      "device_uptime_ms": 141278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:14:43+00:00",
+      "active_power_w": 2065.251,
+      "sample_sequence": 42000026,
+      "connection_state": "offline",
+      "device_uptime_ms": 146278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:14:48+00:00",
+      "active_power_w": 2069.127,
+      "sample_sequence": 42000027,
+      "connection_state": "offline",
+      "device_uptime_ms": 151278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:14:53+00:00",
+      "active_power_w": 2055.418,
+      "sample_sequence": 42000028,
+      "connection_state": "offline",
+      "device_uptime_ms": 156278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:14:58+00:00",
+      "active_power_w": 2036.727,
+      "sample_sequence": 42000029,
+      "connection_state": "offline",
+      "device_uptime_ms": 161278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:12.2934+00:00",
+      "recorded_at": "2026-11-02T05:15:03+00:00",
+      "active_power_w": 2030.239,
+      "sample_sequence": 42000030,
+      "connection_state": "offline",
+      "device_uptime_ms": 166278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:08+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000031,
+      "connection_state": "offline",
+      "device_uptime_ms": 171278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:13+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000032,
+      "connection_state": "offline",
+      "device_uptime_ms": 176278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:18+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000033,
+      "connection_state": "offline",
+      "device_uptime_ms": 181278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:23+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000034,
+      "connection_state": "offline",
+      "device_uptime_ms": 186278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:28+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000035,
+      "connection_state": "offline",
+      "device_uptime_ms": 191278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:20.541626+00:00",
+      "recorded_at": "2026-11-02T05:15:33+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000036,
+      "connection_state": "offline",
+      "device_uptime_ms": 196278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:15:38+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000037,
+      "connection_state": "offline",
+      "device_uptime_ms": 201278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:15:43+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000038,
+      "connection_state": "offline",
+      "device_uptime_ms": 206278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:15:48+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000039,
+      "connection_state": "offline",
+      "device_uptime_ms": 211278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:15:53+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000040,
+      "connection_state": "offline",
+      "device_uptime_ms": 216278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:15:58+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000041,
+      "connection_state": "offline",
+      "device_uptime_ms": 221278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:27.879082+00:00",
+      "recorded_at": "2026-11-02T05:16:03+00:00",
+      "active_power_w": 0,
+      "sample_sequence": 42000042,
+      "connection_state": "offline",
+      "device_uptime_ms": 226278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:08+00:00",
+      "active_power_w": 2033.365,
+      "sample_sequence": 42000043,
+      "connection_state": "offline",
+      "device_uptime_ms": 231278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:13+00:00",
+      "active_power_w": 2050.354,
+      "sample_sequence": 42000044,
+      "connection_state": "offline",
+      "device_uptime_ms": 236278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:18+00:00",
+      "active_power_w": 2067.018,
+      "sample_sequence": 42000045,
+      "connection_state": "offline",
+      "device_uptime_ms": 241278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:23+00:00",
+      "active_power_w": 2068.036,
+      "sample_sequence": 42000046,
+      "connection_state": "offline",
+      "device_uptime_ms": 246278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:28+00:00",
+      "active_power_w": 2052.471,
+      "sample_sequence": 42000047,
+      "connection_state": "offline",
+      "device_uptime_ms": 251278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:35.179459+00:00",
+      "recorded_at": "2026-11-02T05:16:33+00:00",
+      "active_power_w": 2034.635,
+      "sample_sequence": 42000048,
+      "connection_state": "offline",
+      "device_uptime_ms": 256278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:16:38+00:00",
+      "active_power_w": 2030.925,
+      "sample_sequence": 42000049,
+      "connection_state": "offline",
+      "device_uptime_ms": 261278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:16:43+00:00",
+      "active_power_w": 2044.753,
+      "sample_sequence": 42000050,
+      "connection_state": "offline",
+      "device_uptime_ms": 266278,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:16:57+00:00",
+      "active_power_w": 2063.405,
+      "sample_sequence": 42000051,
+      "connection_state": "online",
+      "device_uptime_ms": 279550,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:17:04+00:00",
+      "active_power_w": 2069.733,
+      "sample_sequence": 42000052,
+      "connection_state": "online",
+      "device_uptime_ms": 287130,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:17:12+00:00",
+      "active_power_w": 2057.918,
+      "sample_sequence": 42000053,
+      "connection_state": "online",
+      "device_uptime_ms": 295423,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:17:42.742852+00:00",
+      "recorded_at": "2026-11-02T05:17:21+00:00",
+      "active_power_w": 2038.824,
+      "sample_sequence": 42000054,
+      "connection_state": "online",
+      "device_uptime_ms": 303719,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:04.955377+00:00",
+      "recorded_at": "2026-11-02T05:17:28+00:00",
+      "active_power_w": 2030.005,
+      "sample_sequence": 42000055,
+      "connection_state": "online",
+      "device_uptime_ms": 310781,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:04.955377+00:00",
+      "recorded_at": "2026-11-02T05:17:36+00:00",
+      "active_power_w": 2039.569,
+      "sample_sequence": 42000056,
+      "connection_state": "online",
+      "device_uptime_ms": 318764,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:04.955377+00:00",
+      "recorded_at": "2026-11-02T05:17:43+00:00",
+      "active_power_w": 2058.723,
+      "sample_sequence": 42000057,
+      "connection_state": "online",
+      "device_uptime_ms": 325830,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:04.955377+00:00",
+      "recorded_at": "2026-11-02T05:17:48+00:00",
+      "active_power_w": 2069.857,
+      "sample_sequence": 42000058,
+      "connection_state": "online",
+      "device_uptime_ms": 330830,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:04.955377+00:00",
+      "recorded_at": "2026-11-02T05:17:53+00:00",
+      "active_power_w": 2062.735,
+      "sample_sequence": 42000059,
+      "connection_state": "online",
+      "device_uptime_ms": 335830,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:05+00:00",
+      "active_power_w": 2043.904,
+      "sample_sequence": 42000060,
+      "connection_state": "online",
+      "device_uptime_ms": 347848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:10+00:00",
+      "active_power_w": 2030.678,
+      "sample_sequence": 42000061,
+      "connection_state": "online",
+      "device_uptime_ms": 352848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:15+00:00",
+      "active_power_w": 2035.216,
+      "sample_sequence": 42000062,
+      "connection_state": "online",
+      "device_uptime_ms": 357848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:20+00:00",
+      "active_power_w": 2053.347,
+      "sample_sequence": 42000063,
+      "connection_state": "online",
+      "device_uptime_ms": 362848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:25+00:00",
+      "active_power_w": 2068.401,
+      "sample_sequence": 42000064,
+      "connection_state": "online",
+      "device_uptime_ms": 367848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:37.702584+00:00",
+      "recorded_at": "2026-11-02T05:18:30+00:00",
+      "active_power_w": 2066.537,
+      "sample_sequence": 42000065,
+      "connection_state": "online",
+      "device_uptime_ms": 372848,
+      "firmware_version": "sim-fw-0.2.3"
+    },
+    {
+      "received_at": "2026-11-02T05:18:46.834483+00:00",
+      "recorded_at": "2026-11-02T05:18:38+00:00",
+      "active_power_w": 2049.469,
+      "sample_sequence": 42000066,
+      "connection_state": "online",
+      "device_uptime_ms": 380933,
+      "firmware_version": "sim-fw-0.2.3"
+    }
+  ],
+  "device_id": "sim-esp32-u2-20261102-a",
+  "other_device_samples": 0
+}

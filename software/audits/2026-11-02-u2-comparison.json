@@ -1,0 +1,19 @@
+{
+  "serial_samples": 66,
+  "cloud_samples": 66,
+  "sequence_list_matches": true,
+  "all_printed_power_values_match_within_0_051W": true,
+  "largest_observed_queue": 38,
+  "offline_cloud_samples": 31,
+  "completed_batches": 12,
+  "accepted_total": 66,
+  "partial_batch_sizes": [
+    5,
+    1
+  ],
+  "flush_requested_utc": "2026-11-02T05:18:40.541172+00:00",
+  "flush_complete_utc": "2026-11-02T05:18:47.693350+00:00",
+  "samples_after_flush_request": 0,
+  "http_200_replay_messages": 1,
+  "failed_http_messages": 2
+}
