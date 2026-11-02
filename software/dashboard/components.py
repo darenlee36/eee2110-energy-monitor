@@ -112,6 +112,53 @@ def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
     return figures
 
 
+def render_anomaly_assessment(report: dict) -> None:
+    """Render saved evidence only; no fitting, inference or provider calls."""
+    model = report["evidence_snapshot"]["model"]
+    predictions = model.get("predictions", [])
+    if len(predictions) == 1 and predictions[0]["anomaly_score"] is not None:
+        prediction = predictions[0]
+        st.metric("Anomaly score", f"{prediction['anomaly_score']:.1f} / 100")
+        st.progress(prediction["anomaly_score"] / 100,
+                    text="Higher = more unusual against the normal baseline")
+        st.write("Classification: " + prediction["classification"].title())
+        st.caption("Baseline percentile, not a probability of equipment failure.")
+        comparisons = [{"Measurement": key.replace("_", " ").title(),
+                        "Recorded": value["value"], "Baseline median": value["baseline_median"],
+                        "Difference (%)": value["percent_delta"]}
+                       for key, value in prediction["comparisons"].items()]
+        st.dataframe(pd.DataFrame(comparisons), hide_index=True, width="stretch")
+        st.caption("Differences describe the baseline comparison; they do not prove a cause.")
+    elif len(predictions) > 1:
+        st.caption("Per-cycle assessments; no invented combined appliance-health score.")
+        st.dataframe(pd.DataFrame([
+            {"Cycle": i + 1, "Score (0–100)": p["anomaly_score"],
+             "Classification": p["classification"].title()}
+            for i, p in enumerate(predictions)]), hide_index=True, width="stretch")
+        if not any(p["anomaly_score"] is not None for p in predictions):
+            st.metric("Anomaly score", "Unavailable")
+    else:
+        st.metric("Anomaly score", "Unavailable")
+    messages = {
+        "not_trained": "The model is not trained. No appliance-health score has been calculated.",
+        "insufficient_data": "Not enough reviewed normal sensor cycles to train a baseline.",
+        "test_only_model": "A test-only model cannot assess real appliance behaviour.",
+        "quality_excluded": "This cycle has unsuitable data or unverified/simulated origin.",
+        "scope_mismatch": "The saved model belongs to a different appliance or monitor.",
+        "training_cycle": "This cycle was used in training; it is not an independent evaluation.",
+    }
+    if not predictions:
+        st.caption(messages["not_trained"])
+    reasons = {messages[p["status"]] for p in predictions if p["status"] in messages}
+    for message in sorted(reasons):
+        st.caption(message)
+    training = model.get("status", "not_trained").replace("_", " ")
+    version = model.get("model_version") or "Unavailable"
+    st.caption(f"Training status: {training} · Model: {version}")
+    sources = sorted(report["evidence_snapshot"]["source_counts"])
+    st.caption("Data provenance: " + ", ".join(sources))
+
+
 def render_report_dashboard(report: dict) -> None:
     """Readable report presentation; persistence and generation stay in app.py."""
     evidence = report["evidence_snapshot"]
@@ -235,6 +282,8 @@ def render_report_dashboard(report: dict) -> None:
         st.write("Household usage and applicable tariff adjustments may be unresolved. "
                  "Taxes, incentives, fixed charges and other bill components may be excluded.")
         st.write(
+            "No physical fault or proven efficiency is inferred from a baseline anomaly score."
+            if evidence["model"].get("predictions") else
             "The anomaly model is not trained; no physical fault or proven efficiency is inferred."
         )
 

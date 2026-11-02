@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -98,11 +99,25 @@ def create_server(
                 )
                 return
 
+            cycles = []
             if not result.replayed:
-                store.process_cycles(CycleDetectionSettings.simulation_defaults())
+                cycles = store.process_cycles(CycleDetectionSettings.simulation_defaults())
 
             status = HTTPStatus.OK if result.replayed else HTTPStatus.CREATED
             self._send_json(status, {"data": result.model_dump(mode="json")})
+            # Keep numerical report work outside the receipt's critical path.
+            # This is the existing HTTP worker, not another service/thread.
+            from energy_monitor.report_worker import handle_completed_cycle
+
+            for cycle in cycles:
+                if cycle.status == "completed":
+                    try:
+                        handle_completed_cycle(store, str(cycle.cycle_id))
+                    except Exception:
+                        # Telemetry/cycles are committed; the existing catch-up
+                        # sweep recovers a missing numerical report without AI.
+                        logging.getLogger(__name__).warning(
+                            "Cycle report pending; numerical catch-up required")
 
         def log_message(self, format: str, *args: object) -> None:
             return

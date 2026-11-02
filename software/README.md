@@ -446,3 +446,39 @@ No PZEM-004T pins are assigned and no mains-voltage procedure is included. The r
 fails deliberately until a local, ignored hardware file supplies confirmed pins. Hardware
 integration should begin only after the board, UART pins, isolation/enclosure approach, and
 supervised lab procedure are confirmed.
+
+
+## A1 anomaly/reporting framework — local development
+
+`energy_monitor.anomaly` extracts validated cycle-level electrical features and
+provides `TrainingCase`, `train_model`, versioned `CycleAnomalyModel.save/load`
+and structured predictions. Genuine training requires at least 30 distinct,
+reviewed normal sensor cycles in the training partition, one device/profile,
+complete quality-eligible raw traces and a nonconstant feature matrix. This is a
+minimum engineering gate, not evidence of model accuracy. Held-out/manual/
+simulated/unreviewed/poor-quality data cannot become a genuine training baseline.
+Test-only models are blocked from normal saved-report scoring. No real model is
+trained or configured in this repository checkpoint.
+
+Scores are empirical baseline unusualness percentiles (0–100, higher is more
+unusual), not equipment-failure probabilities. Classification uses the raw
+Isolation Forest decision threshold, not a 50-point score cutoff. Full
+normalization, provisional threshold and evidence limitations are documented in
+`audits/2026-11-02-a1-anomaly-reporting-framework.md`.
+
+Optional `ENERGY_MONITOR_ANOMALY_MODEL` points to an explicitly trusted,
+operator-owned local artifact. Never accept untrusted pickle/model uploads; a
+SHA-256 digest detects corruption, not malicious code. Python/scikit-learn runtime
+versions and feature schema must match. Do not activate a model until genuine
+held-out evaluation and review. Model-enabled snapshots use template v4; old
+v1–v3 and Codex history stay readable. Reports displays saved results only.
+
+`report_worker.handle_completed_cycle` saves the numerical report first. AI needs
+an explicitly authorized provider callable and the existing shared lock, durable
+reservation and quota guards. Existing Codex is one provider; a future server
+provider can implement the same bounded evidence/ID-selection contract. No page
+view/refresh invokes fitting or AI. The local ingestion API invokes numerical
+completion reports after its telemetry receipt. The existing cloud/laptop sweep
+is catch-up; A1 does not install a new cloud webhook or always-on event service.
+Manual exact 5/10/20-cycle comparisons remain available. AI failures retain the
+numerical report; uncertain attempts require review rather than automatic retry.

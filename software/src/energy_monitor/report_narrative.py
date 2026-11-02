@@ -45,7 +45,8 @@ class CodexReview(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     base_report_id: str
     base_reporting_version: Literal[
-        "cycle-report-template-v1", "cycle-report-template-v2", "cycle-report-template-v3"
+        "cycle-report-template-v1", "cycle-report-template-v2", "cycle-report-template-v3",
+        "cycle-report-template-v4"
     ]
     selection: InsightSelection | None
     failure: Failure | None
@@ -68,7 +69,8 @@ def narrative_catalog(base: ReportDraft | dict) -> dict[str, dict[str, str]]:
     if base.engine != "template":
         raise ValueError("select a numerical template report, not an existing AI review")
     evidence = base.evidence_snapshot
-    if evidence["model"] != {"status": "not_trained", "anomaly_evaluation": "not_evaluated"}:
+    if (base.reporting_version != "cycle-report-template-v4" and
+        evidence["model"] != {"status": "not_trained", "anomaly_evaluation": "not_evaluated"}):
         raise ValueError("this review policy requires the untrained-model evidence contract")
     sources = {
         "simulated": "demonstration data",
@@ -123,7 +125,52 @@ def narrative_catalog(base: ReportDraft | dict) -> dict[str, dict[str, str]]:
             "Review meter-counter behaviour and operating conditions; "
             "do not infer a physical fault from this cross-check alone."
         )
-    return {"observations": observations, "actions": actions}
+    catalog = {"observations": observations, "actions": actions}
+    if base.reporting_version == "cycle-report-template-v4":
+        findings = []
+        predictions = evidence["model"]["predictions"]
+        interesting = set(sorted(range(len(predictions)), key=lambda i:
+                                predictions[i]["anomaly_score"] or 0, reverse=True)[:3])
+        for index, prediction in enumerate(predictions):
+            safe = {k: prediction[k] for k in ("status", "anomaly_score", "classification",
+                                               "raw_decision", "quality_warnings")}
+            safe["cycle_number"] = index + 1
+            findings.append(safe)
+            if index not in interesting:
+                continue
+            safe["comparisons"] = dict(sorted(prediction["comparisons"].items(), key=lambda item:
+                abs(item[1].get("percent_delta") or 0), reverse=True)[:3])
+            score = prediction["anomaly_score"]
+            observations[f"model_{index}"] = (
+                f"Cycle {index + 1}: anomaly assessment unavailable ({prediction['status']})."
+                if score is None else
+                f"Cycle {index + 1}: baseline unusualness {score:.1f}/100, "
+                f"classified {prediction['classification']}; not a failure probability.")
+            if score is not None:
+                comparisons = sorted(prediction["comparisons"].items(), key=lambda item:
+                                     abs(item[1].get("percent_delta") or 0), reverse=True)
+                for key, values in comparisons[:3]:
+                    observations[f"compare_{index}_{key}"] = (
+                        f"Cycle {index + 1}, {key.replace('_', ' ')}: recorded "
+                        f"{values['value']:.4g}, normal-baseline median "
+                        f"{values['baseline_median']:.4g}; this is a descriptive comparison, "
+                        "not proof of a cause.")
+                if prediction["classification"] == "anomalous":
+                    observations[f"hypothesis_{index}"] = (
+                        "Possible explanations include changed load, starting conditions, "
+                        "control behaviour or measurement drift. These are hypotheses; "
+                        "the model cannot identify a confirmed physical fault.")
+                    actions["review_baseline"] = (
+                        "Check measurement quality and repeat a comparable controlled cycle; "
+                        "review baseline conditions before investigating an appliance fault.")
+        catalog["context"] = {"model_findings": findings, "model_metadata": {
+            k: evidence["model"][k] for k in ("status", "model_version", "feature_version",
+                                             "normalization", "training_count")}, "measurements": [
+            {k: c[k] for k in ("duration_seconds", "meter_energy_kwh", "average_power_w",
+                               "peak_power_w", "average_current_a", "average_voltage_v",
+                               "average_power_factor", "gap_count", "invalid_sample_count")}
+            for c in evidence["cycles"]], "limitations": evidence["limitations"]}
+    return catalog
 
 
 def _validate_selection(selection: dict | InsightSelection, catalog: dict) -> InsightSelection:
@@ -213,8 +260,12 @@ def render_codex_text(evidence: dict) -> str:
     for section in ("observations", "actions"):
         lines.extend(["", f"### {section.title()}"])
         lines.extend("- " + catalog[section][key] for key in getattr(chosen, section))
-    lines.extend(["", "Anomaly score unavailable: model not trained. "
-                  "This is not a diagnosis; tariff estimates remain partial."])
+    if review.base_reporting_version == "cycle-report-template-v4":
+        lines.extend(["", "Measurements, model findings and possible explanations remain "
+                      "distinct. No cause is confirmed; tariff estimates remain partial."])
+    else:
+        lines.extend(["", "Anomaly score unavailable: model not trained. "
+                      "This is not a diagnosis; tariff estimates remain partial."])
     return "\n".join(lines)
 
 

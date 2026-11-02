@@ -248,6 +248,40 @@ def run_reporting_pass(
             raise
 
 
+def handle_completed_cycle(
+    store: SQLiteTelemetryStore, cycle_id: str, *, anomaly_model=None,
+    provider: Callable | None = None, ai_authorized: bool = False,
+    state_dir: Path | None = None, usage_reader: Callable | None = None,
+) -> dict:
+    """Cycle-completion entry point. Numerical save precedes any guarded AI attempt.
+
+    Provider is a replaceable callable: bounded evidence package -> eligible ID
+    selection. Local Codex is passed explicitly as run_codex; future server-side
+    providers can implement the same contract without changing report storage.
+    """
+    cycle = store.fetch_cycle(cycle_id)
+    if cycle is None or cycle["status"] != "completed":
+        raise ValueError("completed cycle required")
+    report = build_report(store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+                          cycle_id=cycle_id, anomaly_model=anomaly_model)
+    numerical_id = store.save_report(report)
+    result = {"numerical_report_id": numerical_id, "ai_status": "not_authorized"}
+    if not ai_authorized:
+        return result
+    if provider is None:
+        return {**result, "ai_status": "provider_unavailable"}
+    try:
+        outcome = run_reporting_pass(
+            store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+            state_dir=state_dir or DEFAULT_STATE, usage_reader=usage_reader,
+            runner=provider, report_id=numerical_id)
+        return {**result, "ai_status": outcome["status"]}
+    except Exception:
+        # Numerical evidence already persisted. An uncertain reservation remains
+        # held for human review; never automatically replay an unknown AI outcome.
+        return {**result, "ai_status": "needs_review"}
+
+
 def prepare_cloud(store: SQLiteTelemetryStore, config) -> None:
     from energy_monitor.supabase_sync import SupabaseSyncError, sync_supabase_telemetry
 

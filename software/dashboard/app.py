@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from components import (
     build_cycle_figure,
+    render_anomaly_assessment,
     render_command_bar,
     render_cycle_filters,
     render_cycle_history,
@@ -270,8 +271,7 @@ def render_reports() -> None:
                    f"{malaysia_time(report['period_end'])} MYT")
         render_report_dashboard(report)
         st.subheader("Anomaly assessment")
-        st.metric("Anomaly score", "Unavailable")
-        st.caption("The model is not trained. No appliance-health score has been calculated.")
+        render_anomaly_assessment(report)
         with st.expander("Preview the score display"):
             if st.toggle("Show sample score (demo only)", key="report_sample_score"):
                 st.warning("Demo only — not calculated from this cycle. Not a fault probability.")

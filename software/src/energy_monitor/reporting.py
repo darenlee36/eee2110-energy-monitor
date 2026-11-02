@@ -44,8 +44,13 @@ class ReportDraft(BaseModel):
 
 def build_report(
     store: SQLiteTelemetryStore, *, profile_id: str, device_id: str,
-    cycle_id: str | None = None, cycle_count: int = 1,
+    cycle_id: str | None = None, cycle_count: int = 1, anomaly_model=None,
 ) -> ReportDraft:
+    from energy_monitor.anomaly import configured_model, model_evidence
+
+    if anomaly_model is None:
+        anomaly_model = configured_model()
+    version = "cycle-report-template-v4" if anomaly_model is not None else REPORTING_VERSION
     if type(cycle_count) is not int or cycle_count not in (1, 5, 10, 20):
         raise ValueError("cycle count must be 1, 5, 10 or 20")
     for identifier in (profile_id, device_id):
@@ -98,11 +103,13 @@ def build_report(
             "eligible_for_totals": eligible,
             "tariff_estimate": estimate.model_dump(mode="json"),
         })
-        if REPORTING_VERSION == "cycle-report-template-v3":
+        if version in ("cycle-report-template-v3", "cycle-report-template-v4"):
             fields = (
                 "timestamp", "voltage_v", "current_a", "active_power_w",
                 "cumulative_energy_kwh", "frequency_hz", "power_factor", "quality_status",
             )
+            if version == "cycle-report-template-v4":
+                fields += ("sample_sequence", "device_uptime_ms", "firmware_version")
             cycles[-1]["readings"] = [
                 {key: value for key, value in reading.model_dump(mode="json").items()
                  if key in fields}
@@ -140,7 +147,7 @@ def build_report(
     period_end = max(datetime.fromisoformat(c["ended_at"]) for c in cycles)
     kind = "cycle" if cycle_count == 1 else "batch"
     evidence = {
-        "reporting_version": REPORTING_VERSION, "profile_id": profile_id,
+        "reporting_version": version, "profile_id": profile_id,
         "device_id": device_id, "kind": kind, "cycle_count": cycle_count,
         "period_start": period_start.isoformat(), "period_end": period_end.isoformat(),
         "source_counts": dict(source_counts), "cycles": cycles,
@@ -148,13 +155,23 @@ def build_report(
         "model": {"status": "not_trained", "anomaly_evaluation": "not_evaluated"},
         "limitations": sorted(limitations),
     }
+    if anomaly_model is not None:
+        evidence["model"] = model_evidence(anomaly_model, cycles)
+        limitations.discard(
+            "Isolation Forest is not trained; anomaly evaluation is not evaluated.")
+        limitations.update({"Model unusualness is not a failure probability or a fault diagnosis.",
+                            "Baseline comparisons are descriptive, "
+                            "not causal feature attribution."})
+        if evidence["model"]["anomaly_evaluation"] != "evaluated":
+            limitations.add("Anomaly score unavailable: no eligible trained-model evaluation.")
+        evidence["limitations"] = sorted(limitations)
     canonical = json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False)
     evidence_hash = hashlib.sha256(canonical.encode()).hexdigest()
-    report_id = uuid5(NAMESPACE_URL, f"template:{REPORTING_VERSION}:{evidence_hash}")
+    report_id = uuid5(NAMESPACE_URL, f"template:{version}:{evidence_hash}")
     return ReportDraft(
         report_id=report_id, profile_id=profile_id, device_id=device_id, kind=kind,
         cycle_count=cycle_count, period_start=period_start, period_end=period_end,
-        generated_at=datetime.now(UTC), reporting_version=REPORTING_VERSION,
+        generated_at=datetime.now(UTC), reporting_version=version,
         evidence_hash=evidence_hash, evidence_snapshot=evidence,
         report_text=render_report(evidence),
     )
@@ -166,7 +183,7 @@ def render_report(evidence: dict[str, object]) -> str:
         from energy_monitor.report_narrative import render_codex_text
 
         return render_codex_text(evidence)
-    if evidence["reporting_version"] == "cycle-report-template-v3":
+    if evidence["reporting_version"] in ("cycle-report-template-v3", "cycle-report-template-v4"):
         return render_visual_report_text(evidence)
     cycle_count = evidence["cycle_count"]
     profile_id, device_id = evidence["profile_id"], evidence["device_id"]
@@ -233,6 +250,16 @@ def report_insights(evidence: dict[str, object]) -> dict[str, list[str]]:
             "This report includes demonstration, entered or unverified data; "
             "it is not proof of real appliance performance."
         )
+    for prediction in evidence["model"].get("predictions", []):
+        if prediction["anomaly_score"] is not None:
+            observations.append(
+                f"Model baseline unusualness is {prediction['anomaly_score']:.1f}/100 "
+                f"({prediction['classification']}); this is not a failure probability.")
+            if prediction["classification"] == "anomalous":
+                possibilities.append(
+                    "Possible explanations include changed load or starting conditions, "
+                    "control behaviour or measurement drift. These are hypotheses, not "
+                    "confirmed causes or faults.")
     return {
         "observations": observations,
         "possibilities": possibilities or [
@@ -250,6 +277,13 @@ def render_visual_report_text(evidence: dict[str, object]) -> str:
     lines = [
         "# Cycle performance summary", "", "Anomaly score: unavailable — model not trained.", ""
     ]
+    if evidence["reporting_version"] == "cycle-report-template-v4":
+        lines = ["# Cycle performance summary", "", "Anomaly assessment: saved model evidence.", ""]
+        for result in evidence["model"]["predictions"]:
+            score = result["anomaly_score"]
+            lines.append("Anomaly score: unavailable — " + result["status"] + "." if score is None
+                         else f"Anomaly score: {score:.1f}/100; {result['classification']}.")
+        lines.append("Higher means more unusual against the baseline, not a failure probability.")
     for source, total in sorted(evidence["totals_by_source"].items()):
         lines.append(f"Energy used ({source}): {float(total['energy_kwh']):g} kWh.")
         if total["charge_low_rm"] is not None:
@@ -298,6 +332,10 @@ def validate_report(report: ReportDraft | dict[str, object]) -> ReportDraft:
         raise ValueError("template report has an AI review policy or invalid status")
     evidence = parsed.evidence_snapshot
     try:
+        if parsed.reporting_version == "cycle-report-template-v4":
+            from energy_monitor.anomaly import validate_model_evidence
+
+            validate_model_evidence(evidence["model"], evidence["cycles"])
         canonical = json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False)
         digest = hashlib.sha256(canonical.encode()).hexdigest()
         expected_id = uuid5(
