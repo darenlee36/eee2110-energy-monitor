@@ -50,7 +50,7 @@ class CycleListItem(BaseModel):
 class LiveView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    state: Literal["empty", "idle", "heating", "cycle_complete"]
+    state: Literal["empty", "idle", "heating", "cycle_complete", "unconfirmed"]
     connection_state: ConnectionState
     updated_at: datetime | None
     latest_power_w: float | None
@@ -179,7 +179,7 @@ def _cycle_item(
         record_source=str(row.get("record_source", "measured")),
         source_label=(
             "Manual" if row.get("record_source") == "manual" else {
-                "sensor": "Measured", "simulated": "Simulated", "mixed": "Mixed",
+                "sensor": "Sensor mode", "simulated": "Simulated", "mixed": "Mixed",
                 "unknown": "Unverified",
             }[summary.data_origin]
         ),
@@ -188,8 +188,22 @@ def _cycle_item(
     )
 
 
-def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
+def matches_source(origin: str, record_source: str, source_filter: str) -> bool:
+    if source_filter == "all":
+        return True
+    if record_source == "manual":
+        return source_filter == "manual"
+    if source_filter == "unverified":
+        return origin in {"unknown", "mixed"}
+    return origin == source_filter
+
+
+def get_live_view(
+    store: SQLiteTelemetryStore, now: datetime, *, source_filter: str = "all",
+) -> LiveView:
     rows = store.fetch_recent_readings(limit=500)
+    rows = [row for row in rows if matches_source(
+        _reading_from_row(row).data_origin, "measured", source_filter)]
     if not rows:
         return LiveView(
             state="empty",
@@ -210,6 +224,9 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
 
     readings = [_reading_from_row(row) for row in rows]
     latest = readings[-1]
+    # Live follows the newest stream; never attach another monitor/profile/origin.
+    readings = [r for r in readings if (r.device_id, r.profile_id, r.data_origin) ==
+                (latest.device_id, latest.profile_id, latest.data_origin)]
     window_start = latest.timestamp - timedelta(minutes=5)
     recent_readings = [
         reading for reading in readings if reading.timestamp >= window_start
@@ -217,8 +234,10 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
     connection = ConnectionState(derive_connection_state(latest.timestamp, now))
     cycle_rows = [
         row
-        for row in store.fetch_cycles(limit=100)
+        for row in store.fetch_cycles(limit=10_000)
         if row.get("record_source", "measured") == "measured"
+        and (row["device_id"], row["profile_id"], row.get("data_origin", "unknown")) ==
+            (latest.device_id, latest.profile_id, latest.data_origin)
     ]
     active_row = next(
         (row for row in cycle_rows if row["status"] == CycleStatus.ACTIVE.value),
@@ -243,8 +262,10 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
         ]
     )
 
-    if active is not None:
-        state: Literal["empty", "idle", "heating", "cycle_complete"] = "heating"
+    if connection is not ConnectionState.ONLINE:
+        state = "unconfirmed"
+    elif active is not None:
+        state: Literal["empty", "idle", "heating", "cycle_complete", "unconfirmed"] = "heating"
     elif (
         completed_row is not None
         and completed_row.get("ended_at") is not None
@@ -270,8 +291,9 @@ def get_live_view(store: SQLiteTelemetryStore, now: datetime) -> LiveView:
             load_tariff_catalog(CATALOG_PATH),
         )
         quality_note = active.quality_note
-    elif connection is not ConnectionState.ONLINE:
-        quality_note = f"Telemetry is {connection.value}"
+    if connection is not ConnectionState.ONLINE:
+        quality_note = (f"Telemetry is {connection.value}; values are last recorded, "
+                        "not a confirmed current load state. " + quality_note)
 
     return LiveView(
         state=state,
@@ -296,8 +318,12 @@ def list_cycle_items(
     status_filter: str = "all",
     label_filter: str = "all",
     limit: int = 100,
+    *, source_filter: str = "all",
 ) -> list[CycleListItem]:
     rows = store.fetch_cycles(limit=10_000)
+    rows = [r for r in rows if matches_source(
+        str(r.get("data_origin", "unknown")), str(r.get("record_source", "measured")),
+        source_filter)]
     if status_filter == "normal":
         rows = [row for row in rows if row["assessment"] == CycleAssessment.NORMAL.value]
     elif status_filter == "unusual":

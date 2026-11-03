@@ -85,5 +85,5 @@ def test_fixture_cloud_cache_replay_and_saved_streamlit_display(tmp_path, monkey
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=15).run()
     assert not app.exception
     metrics = {m.label: m.value for m in app.metric}
-    assert metrics["Voltage now"] == "239.4 V"
-    assert metrics["Active power now"] == "2,030 W"
+    assert metrics["Last recorded voltage"] == "239.4 V"
+    assert metrics["Last recorded power"] == "2,030 W"

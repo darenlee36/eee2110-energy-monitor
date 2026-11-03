@@ -8,11 +8,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 from components import (
     build_cycle_figure,
+    format_myt,
     render_anomaly_assessment,
     render_command_bar,
     render_cycle_filters,
@@ -28,7 +28,12 @@ from components import (
 from dotenv import load_dotenv
 
 from energy_monitor.cloud_edits import SupabaseCycleStore
-from energy_monitor.dashboard_queries import get_cycle_detail, get_live_view, list_cycle_items
+from energy_monitor.dashboard_queries import (
+    get_cycle_detail,
+    get_live_view,
+    list_cycle_items,
+    matches_source,
+)
 from energy_monitor.models import CycleDetectionSettings, CycleStatus
 from energy_monitor.reporting import build_report
 from energy_monitor.simulator import batch_readings, generate_readings
@@ -180,21 +185,25 @@ def render_reports() -> None:
 
     def history(profile=None, device=None):
         try:
-            return store.fetch_reports(profile, device)
+            reports = store.fetch_reports(profile, device)
+            return [r for r in reports if all(matches_source(
+                c["data_origin"], c["record_source"], source_filter)
+                for c in r["evidence_snapshot"]["cycles"])]
         except SupabaseSyncError:
             st.warning(
                 "Cloud history unavailable. Showing cached reports; history may be incomplete."
             )
-            return SQLiteTelemetryStore.fetch_reports(store, profile, device)
-
-    def malaysia_time(value: str) -> str:
-        return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Kuala_Lumpur")).strftime(
-            "%d %b %Y, %H:%M:%S"
-        )
+            reports = SQLiteTelemetryStore.fetch_reports(store, profile, device)
+            return [r for r in reports if all(matches_source(
+                c["data_origin"], c["record_source"], source_filter)
+                for c in r["evidence_snapshot"]["cycles"])]
 
     try:
         recent = history()
-        completed = [c for c in store.fetch_cycles() if c["status"] == "completed"]
+        completed = [c for c in store.fetch_cycles()
+                     if c["status"] == "completed" and matches_source(
+                         c.get("data_origin", "unknown"), c.get("record_source", "measured"),
+                         source_filter)]
         pairs = sorted({(r["profile_id"], r["device_id"]) for r in [*recent, *completed]})
         st.caption(
             "History: latest 100 reports per selected device/profile. Times use Malaysia time."
@@ -209,7 +218,9 @@ def render_reports() -> None:
             profile, device = st.selectbox(
                 "Report device / profile", pairs, format_func=lambda p: f"{p[1]} / {p[0]}"
             )
-        cycles = store.fetch_report_cycles(profile, device)
+        cycles = [c for c in store.fetch_report_cycles(profile, device)
+                  if matches_source(c.get("data_origin", "unknown"),
+                                    c.get("record_source", "measured"), source_filter)]
         selected_report = None
         if can_edit and cycles:
             with st.expander("Generate template report", expanded=True):
@@ -219,12 +230,21 @@ def render_reports() -> None:
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
                     "Completed cycle", list(cycle_by_id), format_func=lambda cid:
-                    f"{malaysia_time(cycle_by_id[cid]['started_at'])}")
+                    f"{format_myt(cycle_by_id[cid]['started_at'])}")
                 count = st.selectbox("Batch size (cycles)", [5, 10, 20])
                 individual = st.button("Generate cycle report")
                 batch = st.button("Generate batch report")
                 if individual or batch:
                     try:
+                        if batch and any(not matches_source(
+                            c.get("data_origin", "unknown"), c.get("record_source", "measured"),
+                            source_filter) for c in
+                                store.fetch_report_cycles(profile, device)[:count]):
+                            raise ValueError(
+                                "The latest batch includes other data sources. "
+                                "Choose All records to generate a mixed-source comparison, "
+                                "or generate an individual report."
+                            )
                         draft = build_report(
                             store, profile_id=profile, device_id=device,
                             cycle_id=cycle_id if individual else None,
@@ -259,7 +279,7 @@ def render_reports() -> None:
         report_id = st.selectbox("Saved report", list(by_id), key="report_history_id",
             format_func=lambda rid: (
                 f"{by_id[rid]['kind'].title()} · {by_id[rid]['cycle_count']} cycle(s) · "
-                f"{malaysia_time(by_id[rid]['generated_at'])} · report {list(by_id).index(rid) + 1}"
+                f"{format_myt(by_id[rid]['generated_at'])} · report {list(by_id).index(rid) + 1}"
             ))
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
@@ -267,8 +287,8 @@ def render_reports() -> None:
             "AI-assisted selection · numerical template retained" if report["engine"] == "codex"
             else "Generated summary · not AI-generated"
         )
-        st.caption(f"Coverage: {malaysia_time(report['period_start'])} – "
-                   f"{malaysia_time(report['period_end'])} MYT")
+        st.caption(f"Coverage: {format_myt(report['period_start'])} – "
+                   f"{format_myt(report['period_end'])}")
         render_report_dashboard(report)
         st.subheader("Anomaly assessment")
         render_anomaly_assessment(report)
@@ -285,6 +305,7 @@ def render_reports() -> None:
             st.caption(f"Report {report_id} · Version {report['reporting_version']} · "
                        f"SHA-256 {report['evidence_hash']}")
             st.text(report["report_text"])
+            st.caption("Raw saved evidence retains UTC API timestamps for audit.")
             st.json(report["evidence_snapshot"])
     except ValueError:
         st.error("Report validation failed. Invalid history was not displayed.")
@@ -297,6 +318,17 @@ elif use_supabase:
     st.caption("Data source: Supabase cloud with local cache")
 else:
     st.caption("Data source: local development database")
+
+source_options = {
+    "Sensor-mode records": "sensor", "Simulated test records": "simulated",
+    "Manual entries": "manual", "Unverified / mixed": "unverified", "All records": "all",
+}
+source_filter = source_options[st.selectbox(
+    "Data source filter", list(source_options), index=0 if use_supabase else 4,
+    key="data_source_filter",
+)]
+st.caption("Source labels describe the record origin, separately from cycle assessment. "
+           "Historical test records are retained.")
 
 can_edit = owner_can_edit()
 if isinstance(store, SupabaseCycleStore):
@@ -322,7 +354,7 @@ if st.session_state.mode == "Live":
     @st.fragment(run_every="5s" if st.session_state.auto_refresh else None)
     def live_panel() -> None:
         sync_cloud_source()
-        view = get_live_view(store, dashboard_now())
+        view = get_live_view(store, dashboard_now(), source_filter=source_filter)
         st.markdown(
             render_command_bar(view.connection_state, view.updated_at),
             unsafe_allow_html=True,
@@ -332,7 +364,7 @@ if st.session_state.mode == "Live":
     live_panel()
 elif st.session_state.mode == "Cycles":
     sync_cloud_source()
-    live_status = get_live_view(store, dashboard_now())
+    live_status = get_live_view(store, dashboard_now(), source_filter=source_filter)
     st.markdown(
         render_command_bar(live_status.connection_state, live_status.updated_at),
         unsafe_allow_html=True,
@@ -349,7 +381,10 @@ elif st.session_state.mode == "Cycles":
         store,
         status_filter=status_filter.lower(),
         label_filter=label_value,
+        source_filter=source_filter,
     )
+    if st.session_state.selected_cycle_id not in {str(item.cycle_id) for item in items}:
+        st.session_state.selected_cycle_id = None
     selected = render_cycle_history(items)
     if selected is not None:
         st.session_state.selected_cycle_id = str(selected)

@@ -13,3 +13,5 @@ firmware/include/local_secrets.h
 firmware/include/local_hardware.h
 firmware/.pio/
 data/launcher-repair-*/
+
+data/dashboard-verification-*/

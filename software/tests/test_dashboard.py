@@ -75,6 +75,8 @@ def test_cloud_owner_configuration_missing_fails_closed(tmp_path: Path, monkeypa
     assert not app.exception
     assert not any("Add manual cycle" in e.label for e in app.expander)
     assert any("Viewing only" in c.value for c in app.caption)
+    source = next(s for s in app.selectbox if s.label == "Data source filter")
+    assert source.value == "Sensor-mode records"
 
 
 def build_dashboard_cycle_database(tmp_path: Path) -> Path:
@@ -136,8 +138,8 @@ def test_completed_cycle_renders_one_cycle_receipt(
     assert "Simulated cycle energy" in labels
     assert "Estimated gross cycle charge" in labels
     assert sum(button.label == "Reset view" for button in app.button) == 3
-    assert "Frequency now" in labels
-    assert "Power factor now" in labels
+    assert "Last recorded frequency" in labels
+    assert "Last recorded power factor" in labels
     assert all("Development tariff rate" not in item.label for item in app.number_input)
 
     reset_power = next(
@@ -211,7 +213,7 @@ def test_dashboard_adds_manual_cycle_without_raw_telemetry(
         date(2026, 9, 12)
     ).run()
     next(
-        item for item in app.time_input if item.label == "Start time (Malaysia)"
+        item for item in app.time_input if item.label == "Start time (Malaysia / MYT)"
     ).set_value(time(10, 30)).run()
     next(item for item in app.number_input if item.label == "Duration (seconds)").set_value(
         200
@@ -268,7 +270,7 @@ def test_live_figures_show_recent_power_threshold_and_measured_cycle_energy(
     energy_figure = build_cycle_energy_figure(view)
 
     assert power_figure.layout.yaxis.title.text == "Power (W)"
-    assert power_figure.layout.xaxis.title.text == "Malaysia time"
+    assert power_figure.layout.xaxis.title.text == "Malaysia time (MYT)"
     assert power_figure.layout.title.text == "Live power · last 5 min"
     assert power_figure.layout.showlegend is False
     assert not power_figure.layout.annotations
@@ -376,6 +378,7 @@ def test_reports_empty_history_and_no_generation_on_refresh(tmp_path, monkeypatc
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     assert any("No saved reports" in i.value for i in app.info)
@@ -394,6 +397,7 @@ def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypat
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     next(b for b in app.button if b.label == "Generate cycle report").click().run()
     assert not app.exception
@@ -435,6 +439,7 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
                         lambda *a: pytest.fail("Public report generation"))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     assert any("cached reports" in w.value for w in app.warning)
@@ -456,6 +461,7 @@ def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch)
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     values = {m.label: m.value for m in app.metric}
@@ -486,6 +492,7 @@ def test_visual_reports_render_saved_metrics_and_traces_without_cache(tmp_path, 
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     values = {m.label: m.value for m in app.metric}
@@ -518,6 +525,7 @@ def test_visual_report_missing_traces_are_not_invented(tmp_path, monkeypatch, so
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     assert not app.get("plotly_chart")
@@ -609,6 +617,7 @@ def test_visual_batch_reports_allow_exact_count_and_cycle_selection(tmp_path, mo
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     assert any(h.value == f"{count}-cycle overview" for h in app.subheader)
@@ -643,6 +652,7 @@ def test_saved_ai_review_displays_without_invoking_codex(tmp_path, monkeypatch, 
                         lambda *a: pytest.fail("Viewing must not invoke Codex"))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
     assert any(h.value == "AI-assisted review" for h in app.subheader)
@@ -658,3 +668,125 @@ def test_saved_ai_review_displays_without_invoking_codex(tmp_path, monkeypatch, 
     next(b for b in app.button if b.label == "Refresh now").click().run()
     assert not app.exception
     assert len(store.fetch_reports()) == 2
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("2026-11-03T04:58:43+00:00", "03 Nov, 12:58:43 MYT"),
+    ("2026-11-03T04:58:43", "03 Nov, 12:58:43 MYT"),
+    ("2026-11-03T12:58:43+08:00", "03 Nov, 12:58:43 MYT"),
+    ("2026-11-03T16:01:00Z", "04 Nov, 00:01:00 MYT"),
+])
+def test_dashboard_myt_formatter(value, expected):
+    from dashboard.components import format_myt, malaysia_time, render_command_bar
+    from energy_monitor.models import ConnectionState
+
+    assert format_myt(value) == expected
+    assert expected in render_command_bar(ConnectionState.ONLINE, datetime.fromisoformat(value))
+    assert malaysia_time(malaysia_time(value)) == malaysia_time(value)
+
+
+def test_stale_live_display_labels_last_known_values(tmp_path, monkeypatch):
+    database = build_dashboard_cycle_database(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
+    assert not app.exception
+    assert any("Waiting for fresh readings" in m.value for m in app.markdown)
+    assert "Last recorded power" in [m.label for m in app.metric]
+    assert not any("Active load detected" in m.value for m in app.markdown)
+
+
+def test_cycle_receipt_uses_myt_across_midnight(tmp_path, monkeypatch):
+    store = SQLiteTelemetryStore(tmp_path / "midnight.db")
+    readings = generate_cycle_scenario("normal", datetime(2026, 11, 3, 16, 0, tzinfo=UTC))
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(store.database_path))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Cycles"
+    app.run()
+    assert not app.exception
+    assert any("04 Nov 2026, 00:00 MYT" in m.value for m in app.markdown)
+    assert app.dataframe[0].value.iloc[0]["Start (MYT)"] == "04 Nov, 00:00"
+
+
+def test_source_filter_separates_simulated_history_from_sensor_view(tmp_path, monkeypatch):
+    database = build_dashboard_cycle_database(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Cycles"
+    app.session_state["data_source_filter"] = "Sensor-mode records"
+    app.run()
+    assert not app.exception
+    assert not app.dataframe
+    assert any("No cycles" in i.value for i in app.info)
+    next(s for s in app.selectbox if s.label == "Data source filter").set_value(
+        "Simulated test records").run()
+    assert not app.exception
+    assert set(app.dataframe[0].value["Source"]) == {"Simulated"}
+    assert "Status" in app.dataframe[0].value.columns
+    next(s for s in app.selectbox if s.label == "Data source filter").set_value(
+        "Sensor-mode records").run()
+    assert not app.dataframe
+    assert not app.metric  # A previously selected simulated receipt must disappear too.
+
+
+def test_saved_report_dates_and_reading_table_use_myt(tmp_path, monkeypatch):
+    from energy_monitor.reporting import build_report
+
+    store = SQLiteTelemetryStore(tmp_path / "myt-report.db")
+    readings = generate_cycle_scenario("normal", datetime(2026, 11, 3, 16, tzinfo=UTC))
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    c = store.fetch_cycles()[0]
+    store.save_report(build_report(store, profile_id=c["profile_id"],
+                                   device_id=c["device_id"], cycle_id=c["cycle_id"]))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(store.database_path))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert any("Coverage: 04 Nov, 00:" in c.value and "MYT" in c.value for c in app.caption)
+    frame = next(t.value for t in app.dataframe if "Recorded at (MYT)" in t.value.columns)
+    assert frame.iloc[0]["Recorded at (MYT)"].startswith("04 Nov, 00:")
+    assert all(v.endswith("MYT") for v in frame["Recorded at (MYT)"])
+    next(s for s in app.selectbox if s.label == "Data source filter").set_value(
+        "Sensor-mode records").run()
+    assert not app.exception
+    assert not app.metric
+
+
+def test_live_chart_timezone_is_not_added_twice(tmp_path):
+    database = build_dashboard_cycle_database(tmp_path)
+    view = get_live_view(SQLiteTelemetryStore(database), datetime(2026, 9, 12, 6, 5, tzinfo=UTC))
+    for figure in (build_live_power_figure(view, 1000), build_power_quality_figure(view)):
+        first = figure.data[0].x[0]
+        assert first.hour == 14
+        assert first.utcoffset() == timedelta(hours=8)
+    assert view.updated_at.utcoffset() == timedelta(0)
+
+
+def test_source_filtered_batch_does_not_silently_include_simulated_cycles(tmp_path, monkeypatch):
+    store = SQLiteTelemetryStore(tmp_path / "batch-sources.db")
+    for index in range(6):
+        rows = generate_cycle_scenario(
+            "normal", datetime(2026, 10, 1, tzinfo=UTC) + timedelta(minutes=index * 5))
+        rows = [r.model_copy(update={
+            "sample_sequence": r.sample_sequence + index * 1000,
+            "cumulative_energy_kwh": r.cumulative_energy_kwh + index,
+            "firmware_version": "pzem-fw-0.2.5" if index == 5 else r.firmware_version,
+        }) for r in rows]
+        for batch in batch_readings(rows):
+            store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(store.database_path))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "Sensor-mode records"
+    app.run()
+    assert not app.exception
+    next(b for b in app.button if b.label == "Generate batch report").click().run()
+    assert not app.exception
+    assert any("includes other data sources" in e.value for e in app.error)
+    assert store.fetch_reports() == []

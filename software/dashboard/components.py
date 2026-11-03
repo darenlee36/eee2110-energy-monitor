@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from statistics import fmean
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -25,6 +25,18 @@ REPORT_SOURCES = {
     "mixed": ("Mixed-origin data", "#72F6C7"),
     "unknown": ("Unverified origin", "#A8B4D0"),
 }
+
+
+def malaysia_time(value: datetime | str) -> datetime:
+    """Presentation only: legacy naive timestamps mean UTC, never host local time."""
+    parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(MALAYSIA_TZ)
+
+
+def format_myt(value: datetime | str, fmt: str = "%d %b, %H:%M:%S") -> str:
+    return malaysia_time(value).strftime(fmt) + " MYT"
 
 
 def _report_source(cycle: dict) -> str:
@@ -189,9 +201,9 @@ def render_report_dashboard(report: dict) -> None:
         )
     selected = st.selectbox(
         "Cycle readings", range(len(cycles)),
-        format_func=lambda i: f"Cycle {i + 1} · " + datetime.fromisoformat(
-            cycles[i]["started_at"]
-        ).astimezone(MALAYSIA_TZ).strftime("%d %b, %H:%M"),
+        format_func=lambda i: (
+            f"Cycle {i + 1} · " + format_myt(cycles[i]["started_at"], "%d %b, %H:%M")
+        ),
         key=f"report_cycle_{report['report_id']}",
     ) if len(cycles) > 1 else 0
     cycle = cycles[selected]
@@ -259,8 +271,10 @@ def render_report_dashboard(report: dict) -> None:
             "Energy includes the cycle's recorded starting increment; gaps are not interpolated."
         )
         with st.expander("Reading values"):
-            st.dataframe(pd.DataFrame(cycle["readings"]).rename(columns={
-                "timestamp": "Recorded at", "voltage_v": "Voltage (V)",
+            frame = pd.DataFrame(cycle["readings"])
+            frame["timestamp"] = frame["timestamp"].map(format_myt)
+            st.dataframe(frame.rename(columns={
+                "timestamp": "Recorded at (MYT)", "voltage_v": "Voltage (V)",
                 "current_a": "Current (A)", "active_power_w": "Power (W)",
                 "cumulative_energy_kwh": "Meter counter (kWh)",
                 "frequency_hz": "Frequency (Hz)", "power_factor": "Power factor",
@@ -344,7 +358,7 @@ def render_command_bar(connection: ConnectionState, updated_at: datetime | None)
     updated = (
         "Waiting for data"
         if updated_at is None
-        else updated_at.strftime("%d %b, %H:%M:%S UTC")
+        else format_myt(updated_at)
     )
     return (
         f'<div class="command-bar" role="status" aria-live="polite">'
@@ -366,12 +380,17 @@ def _charge_value(estimate: TariffEstimate | None) -> str:
 
 def render_live_state(view: LiveView) -> None:
     if view.state == "empty":
-        st.info("No telemetry is stored yet. Run the normal simulator scenario, then refresh.")
+        st.info("No telemetry matches this source yet. Choose another source or wait for readings.")
         return
 
     state_labels = {
         "idle": ("Monitor ready", "Waiting for the next load cycle", "state-idle"),
         "heating": ("Active load detected", "A load cycle is being measured", "state-heating"),
+        "unconfirmed": (
+            "Waiting for fresh readings",
+            "Last recorded values shown; current load state is unconfirmed",
+            "state-idle",
+        ),
         "cycle_complete": (
             "Cycle complete",
             "The latest load cycle has ended",
@@ -380,16 +399,29 @@ def render_live_state(view: LiveView) -> None:
     }
     title, caption, css_class = state_labels[view.state]
     origin = view.recent_readings[-1].data_origin if view.recent_readings else "unknown"
-    st.caption(f"Latest telemetry origin: {origin} · sensor mode is not calibration evidence")
+    latest = view.recent_readings[-1]
+    st.caption(f"Monitor: {latest.device_id} · Appliance: {latest.profile_id}")
+    st.caption(f"Latest telemetry origin: {origin} · Firmware: {latest.firmware_version} · "
+               "sensor mode is not proof of a verified physical measurement")
+    if origin == "sensor" and latest.device_id.startswith("sim-"):
+        st.caption("This monitor ID was reused from simulation testing. "
+                   "Firmware mode separates the readings; physical provenance needs verification.")
     st.markdown(
         f'<section class="state-panel {css_class}" role="status" aria-live="polite">'
         f'<h2>{title}</h2><p>{caption}</p></section>',
         unsafe_allow_html=True,
     )
+    fresh = view.connection_state is ConnectionState.ONLINE
+    if not fresh:
+        st.caption("Charts end at the last recorded timestamp. "
+                   "No energy is extrapolated while readings are unavailable.")
     primary = st.columns(3)
-    primary[0].metric("Active power now", f"{view.latest_power_w or 0:,.0f} W")
-    primary[1].metric("Voltage now", f"{view.latest_voltage_v or 0:.1f} V")
-    primary[2].metric("Current now", f"{view.latest_current_a or 0:.2f} A")
+    primary[0].metric("Active power now" if fresh else "Last recorded power",
+        f"{view.latest_power_w or 0:,.0f} W")
+    primary[1].metric("Voltage now" if fresh else "Last recorded voltage",
+        f"{view.latest_voltage_v or 0:.1f} V")
+    primary[2].metric("Current now" if fresh else "Last recorded current",
+        f"{view.latest_current_a or 0:.2f} A")
 
     render_resettable_chart(
         build_live_power_figure(view, start_threshold_w=1000.0),
@@ -403,7 +435,8 @@ def render_live_state(view: LiveView) -> None:
     if view.active_cycle is not None:
         origin = view.active_cycle.data_origin
         active = st.columns(3)
-        active[0].metric("Cycle elapsed so far", f"{view.elapsed_seconds or 0} s")
+        active[0].metric("Cycle elapsed so far" if fresh else "Last known cycle elapsed",
+            f"{view.elapsed_seconds or 0} s")
         active[1].metric(
             f"{'Simulated' if origin == 'simulated' else 'Recorded'} cycle energy so far",
             f"{view.energy_so_far_kwh or 0:.5f} kWh",
@@ -429,8 +462,10 @@ def render_live_state(view: LiveView) -> None:
         latest = view.recent_readings[-1]
         st.subheader("Power quality")
         quality = st.columns(2)
-        quality[0].metric("Frequency now", f"{latest.frequency_hz:.2f} Hz")
-        quality[1].metric("Power factor now", f"{latest.power_factor:.3f}")
+        quality[0].metric("Frequency now" if fresh else "Last recorded frequency",
+            f"{latest.frequency_hz:.2f} Hz")
+        quality[1].metric("Power factor now" if fresh else "Last recorded power factor",
+            f"{latest.power_factor:.3f}")
         render_resettable_chart(
             build_power_quality_figure(view),
             chart_key="live_power_quality_chart",
@@ -444,7 +479,7 @@ def render_live_state(view: LiveView) -> None:
 
 def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figure:
     readings = view.recent_readings
-    timestamps = [reading.timestamp.astimezone(MALAYSIA_TZ) for reading in readings]
+    timestamps = [malaysia_time(reading.timestamp) for reading in readings]
     power = [reading.active_power_w for reading in readings]
     custom_hover = [
         [reading.voltage_v, reading.current_a, reading.quality_status.value]
@@ -496,8 +531,8 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
             chart_end = readings[-1].timestamp
             if cycle_end >= chart_start and cycle.started_at <= chart_end:
                 figure.add_vrect(
-                    x0=max(cycle.started_at, chart_start).astimezone(MALAYSIA_TZ),
-                    x1=min(cycle_end, chart_end).astimezone(MALAYSIA_TZ),
+                    x0=malaysia_time(max(cycle.started_at, chart_start)),
+                    x1=malaysia_time(min(cycle_end, chart_end)),
                     fillcolor="rgba(255, 116, 72, 0.10)",
                     line_width=0,
                     layer="below",
@@ -522,7 +557,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
         **_transparent_chart_layout(height=330),
         title={"text": "Live power · last 5 min", "x": 0.02},
         xaxis={
-            "title": "Malaysia time",
+            "title": "Malaysia time (MYT)",
             "gridcolor": "rgba(184,196,255,0.10)",
             "tickformat": "%H:%M",
             "automargin": True,
@@ -540,7 +575,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
 
 def build_power_quality_figure(view: LiveView) -> go.Figure:
     readings = view.recent_readings
-    timestamps = [reading.timestamp.astimezone(MALAYSIA_TZ) for reading in readings]
+    timestamps = [malaysia_time(reading.timestamp) for reading in readings]
     figure = make_subplots(
         rows=2,
         cols=1,
@@ -583,7 +618,7 @@ def build_power_quality_figure(view: LiveView) -> go.Figure:
         showlegend=False,
     )
     figure.update_xaxes(
-        title_text="Malaysia time",
+        title_text="Malaysia time (MYT)",
         gridcolor="rgba(184,196,255,0.10)",
         tickformat="%H:%M",
         automargin=True,
@@ -628,7 +663,11 @@ def build_cycle_energy_figure(view: LiveView) -> go.Figure | None:
         first_increment + max(0.0, reading.cumulative_energy_kwh - baseline)
         for reading in readings
     ]
-    state = "In progress" if view.active_cycle is not None else "Completed cycle"
+    state = (
+        "Last known cycle · awaiting fresh readings" if view.state == "unconfirmed"
+        and view.active_cycle is not None else "In progress" if view.active_cycle is not None
+        else "Completed cycle"
+    )
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
@@ -691,7 +730,7 @@ def render_manual_cycle_entry(store: SQLiteTelemetryStore) -> UUID | None:
                 key="manual_cycle_date",
             )
             cycle_time = time_column.time_input(
-                "Start time (Malaysia)",
+                "Start time (Malaysia / MYT)",
                 step=60,
                 key="manual_cycle_time",
             )
@@ -756,7 +795,7 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
     frame = pd.DataFrame(
         [
             {
-                "Start (MYT)": item.started_at.astimezone(MALAYSIA_TZ).strftime(
+                "Start (MYT)": malaysia_time(item.started_at).strftime(
                     "%d %b, %H:%M"
                 ),
                 "Duration": (
@@ -794,8 +833,8 @@ def render_cycle_receipt(detail: CycleDetail) -> None:
     }[summary.assessment.value]
     st.markdown(
         f'<section class="cycle-receipt {status_class}">'
-        f'<p class="eyebrow">SELECTED CYCLE · UTC AUDIT TIME</p>'
-        f"<h2>{summary.started_at:%d %b %Y, %H:%M UTC}</h2>"
+        f'<p class="eyebrow">SELECTED CYCLE · MALAYSIA TIME</p>'
+        f"<h2>{format_myt(summary.started_at, '%d %b %Y, %H:%M')}</h2>"
         f"<p>{summary.status.value.title()} · "
         f"{summary.assessment.value.replace('_', ' ').title()}</p></section>",
         unsafe_allow_html=True,

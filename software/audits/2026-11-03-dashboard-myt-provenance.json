@@ -1,0 +1,178 @@
+{
+  "cloud_rows_copied": 511,
+  "cloud_copy_only": true,
+  "before": {
+    "state": "heating",
+    "connection": "offline",
+    "latest_device": "sim-esp32-u3-20261102-a",
+    "latest_origin": "sensor",
+    "latest_power_w": 0.0,
+    "latest_timestamp_utc": "2026-11-03T05:03:43+00:00",
+    "active": {
+      "cycle_id": "d7b0b338-f238-5191-813c-4c6a2c0bf4b1",
+      "device_id": "sim-esp32-03b248",
+      "profile_id": "tefal-kettle",
+      "started_at": "2026-10-20T15:41:42Z",
+      "ended_at": null,
+      "start_sequence": 8000079,
+      "end_sequence": null,
+      "status": "active",
+      "assessment": "not_evaluated",
+      "duration_seconds": 25,
+      "meter_energy_kwh": 0.017081999999999986,
+      "integrated_energy_kwh": 0.014230620833333334,
+      "energy_difference_ratio": 0.16692302813878085,
+      "average_power_w": 2049.823,
+      "peak_power_w": 2069.367,
+      "average_voltage_v": 238.44878333333335,
+      "minimum_voltage_v": 238.0095,
+      "maximum_voltage_v": 239.0672,
+      "average_current_a": 8.622294333333334,
+      "average_power_factor": 0.997,
+      "sample_count": 6,
+      "valid_sample_count": 6,
+      "invalid_sample_count": 0,
+      "missing_sample_count": 0,
+      "gap_count": 0,
+      "largest_gap_seconds": 5,
+      "quality_note": "Cycle is still heating",
+      "detection_version": "sim-cycle-v1",
+      "data_origin": "simulated",
+      "predicted_volume": null,
+      "prediction_confidence": null,
+      "volume_model_version": null,
+      "effective_volume": "unknown"
+    },
+    "cycle_reading_count": 6,
+    "recent_origin_set": [
+      "sensor"
+    ]
+  },
+  "after": {
+    "state": "unconfirmed",
+    "connection": "offline",
+    "latest_device": "sim-esp32-u3-20261102-a",
+    "latest_origin": "sensor",
+    "latest_power_w": 0.0,
+    "latest_timestamp_utc": "2026-11-03T05:03:43+00:00",
+    "active": null,
+    "cycle_reading_count": 0,
+    "recent_origin_set": [
+      "sensor"
+    ]
+  },
+  "cycles": [
+    {
+      "device_id": "sim-esp32-u3-20261102-a",
+      "started_at": "2026-11-02T06:12:41Z",
+      "status": "incomplete",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.05410199999999998
+    },
+    {
+      "device_id": "sim-esp32-u3-20261102-a",
+      "started_at": "2026-11-02T06:09:41Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06831599999999999
+    },
+    {
+      "device_id": "sim-esp32-u3-20261102-a",
+      "started_at": "2026-11-02T06:06:41Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.08544700000000002
+    },
+    {
+      "device_id": "sim-esp32-u3-20261102-a",
+      "started_at": "2026-11-02T06:03:41Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06834399999999999
+    },
+    {
+      "device_id": "sim-esp32-u2-20261102-a",
+      "started_at": "2026-11-02T05:57:25Z",
+      "status": "incomplete",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06834399999999999
+    },
+    {
+      "device_id": "sim-esp32-u2-20261102-a",
+      "started_at": "2026-11-02T05:16:08Z",
+      "status": "incomplete",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06836100000000003
+    },
+    {
+      "device_id": "sim-esp32-u2-20261102-a",
+      "started_at": "2026-11-02T05:12:56Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06834399999999999
+    },
+    {
+      "device_id": "sim-esp32-03b248",
+      "started_at": "2026-10-20T15:41:42Z",
+      "status": "active",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.017081999999999986
+    },
+    {
+      "device_id": "sim-esp32-03b248",
+      "started_at": "2026-10-20T15:38:31Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.08544700000000002
+    },
+    {
+      "device_id": "sim-esp32-03b248",
+      "started_at": "2026-10-20T15:35:19Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06834399999999999
+    },
+    {
+      "device_id": "sim-esp32-03b248",
+      "started_at": "2026-10-20T15:33:28Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.03418300000000002
+    },
+    {
+      "device_id": "sim-esp32-03b248",
+      "started_at": "2026-10-20T15:30:16Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.06834399999999999
+    },
+    {
+      "device_id": "sim-cloud-573deef52fa8",
+      "started_at": "2026-10-15T12:25:51.688979Z",
+      "status": "completed",
+      "origin": "simulated",
+      "meter_energy_kwh": 0.08541699999999999
+    }
+  ],
+  "snapshot_sha256": "e013f16c1ff15a05c6dd6a79561cca6c6efb138f173ec7e5fd1e35f9446d5023",
+  "cloud_sensor_mode_window": {
+    "device_id": "sim-esp32-u3-20261102-a",
+    "firmware": "pzem-fw-0.2.5",
+    "count": 102,
+    "first_at_utc": "2026-11-03T04:55:18+00:00",
+    "last_at_utc": "2026-11-03T05:03:43+00:00",
+    "minimum_power_w": 0,
+    "maximum_power_w": 0,
+    "minimum_counter_kwh": 0.001,
+    "maximum_counter_kwh": 0.001,
+    "physical_provenance": "not independently verified; firmware-mode metadata only"
+  },
+  "screenshot_match": {
+    "timestamp_utc": "2026-11-03T04:58:43+00:00",
+    "timestamp_myt": "2026-11-03T12:58:43+08:00",
+    "voltage_v": 244.9,
+    "frequency_hz": 50,
+    "power_w": 0,
+    "received_at_utc": "2026-11-03T04:58:50.066218+00:00"
+  }
+}
