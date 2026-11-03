@@ -1,0 +1,31 @@
+0.005s ets Jul 29 2019 12:21:46
+0.010s rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+0.013s configsip: 0, SPIWP:0xee
+0.021s mode:DIO, clock div:2
+0.024s load:0x3fff0030,len:1184
+0.026s load:0x40078000,len:13232
+0.027s load:0x40080400,len:3028
+0.028s entry 0x400805e4
+2.614s Hotspot scan: networks=11 saved network=found
+2.616s PZEM telemetry reader
+2.617s Firmware: pzem-fw-0.2.5
+2.625s PZEM UART2 RX=14 TX=27 baud=9600 8N1 address=0xF8; sensor reply unverified.
+2.630s Send flush followed by newline to stop sampling and upload queued readings.
+2.802s WiFi connected; IP assigned.
+7.725s Sensor read_error uptime_ms=7212 duration_ms=100; no reading queued.
+12.725s Sensor read_error uptime_ms=12212 duration_ms=100; no reading queued.
+17.726s Sensor read_error uptime_ms=17212 duration_ms=100; no reading queued.
+22.725s Sensor read_error uptime_ms=22212 duration_ms=100; no reading queued.
+27.726s Sensor read_error uptime_ms=27212 duration_ms=100; no reading queued.
+32.726s Sensor read_error uptime_ms=32212 duration_ms=100; no reading queued.
+37.726s Sensor read_error uptime_ms=37212 duration_ms=100; no reading queued.
+42.726s Sensor read_error uptime_ms=42212 duration_ms=100; no reading queued.
+47.726s Sensor read_error uptime_ms=47212 duration_ms=100; no reading queued.
+52.726s Sensor read_error uptime_ms=52212 duration_ms=100; no reading queued.
+57.726s Sensor read_error uptime_ms=57212 duration_ms=100; no reading queued.
+62.726s Sensor read_error uptime_ms=62212 duration_ms=100; no reading queued.
+67.726s Sensor read_error uptime_ms=67212 duration_ms=100; no reading queued.
+72.727s Sensor read_error uptime_ms=72212 duration_ms=100; no reading queued.
+77.726s Sensor read_error uptime_ms=77212 duration_ms=100; no reading queued.
+82.726s Sensor read_error uptime_ms=82212 duration_ms=100; no reading queued.
+87.726s Sensor read_error uptime_ms=87212 duration_ms=100; no reading queued.

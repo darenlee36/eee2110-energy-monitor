@@ -1,7 +1,8 @@
 # Direct campus Wi-Fi preflight - 3 November 2026
 
-Status: **connection pending current trusted certificate settings and private user
-credential entry**. No enterprise login attempted, firmware altered/reflashed,
+Status: **direct enterprise connection deferred**. The user subsequently selected
+Windows hotspot sharing; see `2026-11-03-campus-hotspot-sharing.md`. The certificate
+prerequisites below apply only if direct campus login is resumed. No enterprise login attempted, firmware altered/reflashed,
 certificate validation disabled, or account credentials read or retrieved.
 
 Base: edf71d9, the successfully flashed USB-only pzem-fw-0.2.5 checkpoint. The user
