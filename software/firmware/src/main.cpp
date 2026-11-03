@@ -209,6 +209,7 @@ void setup() {
   }
   lastReconnectMs = millis() - kReconnectIntervalMs;
   Serial.println(TELEMETRY_SIMULATED ? "Simulated telemetry reader" : "PZEM telemetry reader");
+  Serial.printf("Firmware: %s\n", kFirmwareVersion);
 #if !TELEMETRY_SIMULATED
   Serial.printf("PZEM UART2 RX=%d TX=%d baud=9600 8N1 address=0xF8; sensor reply unverified.\n",
                 PZEM_RX_PIN, PZEM_TX_PIN);

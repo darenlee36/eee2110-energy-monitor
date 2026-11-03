@@ -1,0 +1,20 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "requested_seconds": 120,
+  "controlled_reset": true,
+  "firmware_banners": 1,
+  "read_errors": 3,
+  "clock_deferred": 20,
+  "samples": 0,
+  "crash_headlines": 0,
+  "reset_lines": 1,
+  "unrecognized_lines_omitted": 1,
+  "durations_ms": [
+    100,
+    100,
+    100
+  ],
+  "started_at_utc": "2026-11-03T04:06:55.672163+00:00",
+  "observed_seconds": 120.131
+}

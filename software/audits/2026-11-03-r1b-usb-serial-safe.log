@@ -1,0 +1,87 @@
+0.005s ets Jul 29 2019 12:21:46
+0.010s rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+0.013s configsip: 0, SPIWP:0xee
+0.021s mode:DIO, clock div:2
+0.024s load:0x3fff0030,len:1184
+0.026s load:0x40078000,len:13232
+0.027s load:0x40080400,len:3028
+0.028s entry 0x400805e4
+2.209s Hotspot scan: networks=4 saved network=not found
+2.211s PZEM telemetry reader
+2.212s Firmware: pzem-fw-0.2.5
+2.220s PZEM UART2 RX=14 TX=27 baud=9600 8N1 address=0xF8; sensor reply unverified.
+2.225s Send flush followed by newline to stop sampling and upload queued readings.
+3.871s WiFi disconnect reason=201
+5.715s WiFi disconnect reason=201
+7.218s Clock not synchronized; sample deferred.
+7.357s WiFi disconnect reason=201
+8.999s WiFi disconnect reason=201
+10.841s WiFi disconnect reason=201
+12.218s Clock not synchronized; sample deferred.
+14.075s WiFi disconnect reason=201
+15.918s WiFi disconnect reason=201
+17.218s Clock not synchronized; sample deferred.
+17.761s WiFi disconnect reason=201
+19.403s WiFi disconnect reason=201
+21.246s WiFi disconnect reason=201
+22.218s Clock not synchronized; sample deferred.
+23.878s WiFi disconnect reason=201
+25.921s WiFi disconnect reason=201
+27.219s Clock not synchronized; sample deferred.
+27.764s WiFi disconnect reason=201
+29.606s WiFi disconnect reason=201
+31.649s WiFi disconnect reason=201
+32.218s Clock not synchronized; sample deferred.
+34.081s WiFi disconnect reason=201
+35.924s WiFi disconnect reason=201
+37.218s Clock not synchronized; sample deferred.
+37.766s WiFi disconnect reason=201
+39.609s WiFi disconnect reason=201
+41.452s WiFi disconnect reason=201
+42.218s Clock not synchronized; sample deferred.
+44.084s WiFi disconnect reason=201
+45.927s WiFi disconnect reason=201
+47.218s Clock not synchronized; sample deferred.
+47.569s WiFi disconnect reason=201
+49.613s WiFi disconnect reason=201
+51.454s WiFi disconnect reason=201
+52.218s Clock not synchronized; sample deferred.
+54.086s WiFi disconnect reason=201
+55.929s WiFi disconnect reason=201
+57.218s Clock not synchronized; sample deferred.
+57.572s WiFi disconnect reason=201
+59.414s WiFi disconnect reason=201
+61.257s WiFi disconnect reason=201
+62.218s Clock not synchronized; sample deferred.
+64.087s WiFi disconnect reason=201
+65.730s WiFi disconnect reason=201
+67.219s Clock not synchronized; sample deferred.
+67.573s WiFi disconnect reason=201
+69.215s WiFi disconnect reason=201
+71.058s WiFi disconnect reason=201
+72.219s Clock not synchronized; sample deferred.
+74.291s WiFi disconnect reason=201
+76.134s WiFi disconnect reason=201
+77.219s Clock not synchronized; sample deferred.
+78.177s WiFi disconnect reason=201
+80.220s WiFi disconnect reason=201
+82.063s WiFi disconnect reason=201
+82.219s Clock not synchronized; sample deferred.
+83.895s WiFi disconnect reason=201
+85.737s WiFi disconnect reason=201
+87.219s Clock not synchronized; sample deferred.
+87.580s WiFi disconnect reason=201
+89.423s WiFi disconnect reason=201
+91.466s WiFi disconnect reason=201
+92.219s Clock not synchronized; sample deferred.
+94.097s WiFi disconnect reason=201
+95.739s WiFi disconnect reason=201
+97.219s Clock not synchronized; sample deferred.
+97.582s WiFi disconnect reason=201
+99.624s WiFi disconnect reason=201
+101.267s WiFi disconnect reason=201
+102.219s Clock not synchronized; sample deferred.
+102.550s WiFi connected; IP assigned.
+107.322s Sensor read_error uptime_ms=106807 duration_ms=100; no reading queued.
+112.322s Sensor read_error uptime_ms=111807 duration_ms=100; no reading queued.
+117.322s Sensor read_error uptime_ms=116807 duration_ms=100; no reading queued.
