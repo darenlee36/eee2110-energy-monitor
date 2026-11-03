@@ -1,9 +1,8 @@
 #pragma once
 
-// Copy to local_hardware.h only after board and supervised UART wiring are confirmed.
-// Do not use these placeholders as a wiring recommendation.
-constexpr int PZEM_RX_PIN = -1;
-constexpr int PZEM_TX_PIN = -1;
-
-static_assert(PZEM_RX_PIN >= 0, "Set confirmed PZEM_RX_PIN in local_hardware.h");
-static_assert(PZEM_TX_PIN >= 0, "Set confirmed PZEM_TX_PIN in local_hardware.h");
+// Documented plan, not a claim of verified wiring. Supervisor must confirm before flash.
+// ESP32 RX receives PZEM TX; ESP32 TX sends to PZEM RX through the approved level converter.
+constexpr int PZEM_RX_PIN = 14;
+constexpr int PZEM_TX_PIN = 27;
+static_assert(PZEM_RX_PIN == 14 && PZEM_TX_PIN == 27,
+              "R1B plan requires RX14/TX27; review hardware evidence before changing pins");

@@ -559,3 +559,24 @@ options and AI quota/duplicate safeguards remain intact. Keep both this checkout
 (the launcher/source) and the original runtime/data directory available. The daily
 ChatGPT progress checker was not changed. See
 [audit](audits/2026-11-02-reporting-launcher-repair.md) for evidence and limitations.
+
+
+### R1A genuine PZEM preparation - 3 November 2026
+
+The existing `esp32dev-pzem` target uses PZEM004Tv30 v1.2.1 with the delivered
+V4.0 module's expected V3-compatible register protocol. Default builds remain
+simulated. Planned UART2 pins are RX14/TX27 at 9600 8N1, default single-module
+address 0xF8; a supervisor must confirm the assembled low-voltage interface before
+any genuine flash/test. No genuine communication has been verified yet.
+
+Real-reader failures now remain unavailable, are logged, and never enter upload
+batches as fabricated zeroes. The first successful recovery carries
+`communication_gap`; later valid snapshots retain existing units and quality gates.
+Firmware identifies this genuine acquisition mode as `pzem-fw-0.2.5`. This tag is
+origin metadata, not calibration or proof of successful sensor operation.
+
+Host-only reader tests use `pio test -d firmware -e native-pzem`; existing U1-U3
+regressions remain `-e native`. Keep separate output roots or run PlatformIO targets
+sequentially. Do not upload the native API-double fixture to Supabase or training.
+See the [R1A audit and R1B supervised checklist](audits/2026-11-03-r1a-pzem-integration.md).
+R1B remains pending; no hardware action is requested in this preparation stage.

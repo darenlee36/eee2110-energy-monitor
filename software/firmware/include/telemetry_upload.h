@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <mutex>
 
@@ -25,6 +26,8 @@ class TelemetryUpload {
   }
 
   bool enqueue(const TelemetryReading &reading) {
+    // The wire contract requires complete numeric measurements; never send failed reads.
+    if (reading.qualityStatus && std::strcmp(reading.qualityStatus, "read_error") == 0) return false;
     std::lock_guard<std::mutex> lock(mutex_);
     return !finalFlushRequested_ && queue_.push(reading);
   }

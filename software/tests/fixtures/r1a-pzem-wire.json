@@ -1,0 +1,27 @@
+{
+  "fixture_kind": "synthetic_native_pzem_api_double",
+  "batch": {
+    "batch_id": "11111111-1111-4111-8111-111111111111",
+    "readings": [
+      {
+        "device_id": "r1a-fixture",
+        "profile_id": "tefal-kettle",
+        "timestamp": "2026-11-03T00:00:00Z",
+        "sample_sequence": 1,
+        "device_uptime_ms": 5000,
+        "voltage_v": 239.4,
+        "current_a": 8.5,
+        "active_power_w": 2030,
+        "cumulative_energy_kwh": 12.345,
+        "frequency_hz": 50,
+        "power_factor": 0.997,
+        "appliance_state": "unknown",
+        "battery_voltage_v": null,
+        "connection_state": "online",
+        "anomaly_status": "not_evaluated",
+        "quality_status": "valid",
+        "firmware_version": "pzem-fw-0.2.5"
+      }
+    ]
+  }
+}

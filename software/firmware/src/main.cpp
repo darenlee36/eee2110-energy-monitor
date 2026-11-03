@@ -57,7 +57,7 @@ constexpr std::size_t kQueueCapacity = 120;
 #if TELEMETRY_SIMULATED
 constexpr char kFirmwareVersion[] = "sim-fw-0.2.4";
 #else
-constexpr char kFirmwareVersion[] = "pzem-fw-0.2.4";
+constexpr char kFirmwareVersion[] = "pzem-fw-0.2.5";
 #endif
 
 TelemetryUpload<kQueueCapacity> uploader(DEVICE_ID, PROFILE_ID, kFirmwareVersion);
@@ -209,6 +209,10 @@ void setup() {
   }
   lastReconnectMs = millis() - kReconnectIntervalMs;
   Serial.println(TELEMETRY_SIMULATED ? "Simulated telemetry reader" : "PZEM telemetry reader");
+#if !TELEMETRY_SIMULATED
+  Serial.printf("PZEM UART2 RX=%d TX=%d baud=9600 8N1 address=0xF8; sensor reply unverified.\n",
+                PZEM_RX_PIN, PZEM_TX_PIN);
+#endif
   Serial.println("Send flush followed by newline to stop sampling and upload queued readings.");
   if (!configurationIsReady()) {
     Serial.println("Copy local_secrets.example.h to local_secrets.h before network upload.");
@@ -240,14 +244,25 @@ void loop() {
     } else if (uploader.full()) {
       Serial.println("Telemetry queue full; sample deferred until upload succeeds.");
     } else {
+      const std::uint32_t readStartedMs = millis();
       TelemetryReading reading = reader.read(nowMs, timestamp);
+      const std::uint32_t readDurationMs = millis() - readStartedMs;
       reading.connectionState = WiFi.status() == WL_CONNECTED ? "online" : "offline";
-      if (assignSequence(reading) && uploader.enqueue(reading)) {
+      if (std::strcmp(reading.qualityStatus, "read_error") == 0) {
+        Serial.printf("Sensor read_error uptime_ms=%u duration_ms=%u; no reading queued.\n",
+                      nowMs, readDurationMs);
+      } else if (assignSequence(reading) && uploader.enqueue(reading)) {
         Serial.printf(
             "sample=%llu power=%.1fW queued=%u uptime_ms=%u interval_ms=%u late_ms=%u missed_slots=%u\n",
             static_cast<unsigned long long>(reading.sampleSequence), reading.activePowerW,
             static_cast<unsigned>(uploader.queued()), nowMs,
             havePreviousSample ? nowMs - previousSampleMs : 0, tick.lateMs, tick.missedSlots);
+#if !TELEMETRY_SIMULATED
+        Serial.printf("PZEM quality=%s V=%.1f I=%.3f P=%.1f E_kWh=%.3f Hz=%.1f PF=%.2f read_ms=%u\n",
+                      reading.qualityStatus, reading.voltageV, reading.currentA,
+                      reading.activePowerW, reading.cumulativeEnergyKwh,
+                      reading.frequencyHz, reading.powerFactor, readDurationMs);
+#endif
         previousSampleMs = nowMs;
         havePreviousSample = true;
       } else {
