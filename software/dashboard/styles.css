@@ -280,3 +280,39 @@ button[kind="primary"] p {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Dashboard v2 */
+[data-testid="stHeadingWithActionElements"] h1 {
+  font-size: clamp(2.35rem, 6vw, 4.25rem);
+}
+
+.state-panel {
+  padding: .55rem .85rem;
+  margin: .25rem 0 .35rem;
+}
+
+.state-panel h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.55rem);
+}
+
+.state-offline::after { background: var(--danger); }
+.state-finalizing::after { background: var(--warning); }
+
+[class*="st-key-cycle-tiles-"] [data-testid="stMetric"] {
+  border-color: rgba(114, 246, 199, .27);
+  box-shadow: inset 3px 0 0 rgba(114, 246, 199, .55), 0 0 18px rgba(114, 246, 199, .07);
+}
+
+@media (max-width: 640px) {
+  .st-key-live-electrical-pair > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
+    flex-direction: column;
+  }
+
+  .st-key-live-electrical-pair > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]
+    > [data-testid="stColumn"] {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}

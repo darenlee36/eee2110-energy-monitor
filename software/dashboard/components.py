@@ -10,8 +10,13 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView
-from energy_monitor.models import ConnectionState, ManualCycleRecord, TariffEstimate
+from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView, get_cycle_detail
+from energy_monitor.models import (
+    ConnectionState,
+    ManualCycleRecord,
+    TariffEstimate,
+    TelemetryReading,
+)
 from energy_monitor.report_narrative import FAILURE_MESSAGES, narrative_sections
 from energy_monitor.reporting import report_insights
 from energy_monitor.storage import SQLiteTelemetryStore
@@ -378,50 +383,56 @@ def _charge_value(estimate: TariffEstimate | None) -> str:
     return "Unavailable"
 
 
-def render_live_state(view: LiveView) -> None:
+def live_status(view: LiveView) -> tuple[str, str]:
     if view.state == "empty":
-        st.info("No telemetry matches this source yet. Choose another source or wait for readings.")
-        return
+        return "Connecting", "idle"
+    if view.connection_state is not ConnectionState.ONLINE or view.state == "unconfirmed":
+        return "Offline", "offline"
+    if view.recent_readings[-1].quality_status.value != "valid":
+        return "Connecting", "idle"
+    return {
+        "idle": ("Ready", "idle"),
+        "heating": ("Monitoring Load", "heating"),
+        "finalizing": ("Finalizing", "finalizing"),
+        "cycle_complete": ("Cycle Complete", "complete"),
+    }[view.state]
 
-    state_labels = {
-        "idle": ("Monitor ready", "Waiting for the next load cycle", "state-idle"),
-        "heating": ("Active load detected", "A load cycle is being measured", "state-heating"),
-        "finalizing": (
-            "Finalizing cycle", "Waiting for enough low-power readings", "state-idle"
-        ),
-        "unconfirmed": (
-            "Waiting for fresh readings",
-            "Last recorded values shown; current load state is unconfirmed",
-            "state-idle",
-        ),
-        "cycle_complete": (
-            "Cycle complete",
-            "The latest load cycle has ended",
-            "state-complete",
-        ),
-    }
-    title, caption, css_class = state_labels[view.state]
-    origin = view.recent_readings[-1].data_origin if view.recent_readings else "unknown"
-    latest = view.recent_readings[-1]
-    st.caption(f"Monitor: {latest.device_id} · Appliance: {latest.profile_id}")
-    st.caption(f"Latest telemetry origin: {origin} · Firmware: {latest.firmware_version} · "
-               "sensor mode is not proof of a verified physical measurement")
-    if origin == "sensor" and latest.device_id.startswith("sim-"):
-        st.caption("This monitor ID was reused from simulation testing. "
-                   "Firmware mode separates the readings; physical provenance needs verification.")
+
+def _charge_caption(estimate: TariffEstimate | None) -> None:
+    if estimate is None:
+        return
+    rate = estimate.gross_variable_rate_sen_per_kwh
+    detail = f" · {rate} sen/kWh" if rate is not None else ""
+    qualifier = " · qualified estimate" if estimate.status.value == "partial" else ""
+    st.caption(f"{estimate.provider} {estimate.scheme}{detail}{qualifier}")
+    render_tariff_disclosure(estimate, "Cycle energy")
+
+
+def render_live_state(view: LiveView, store: SQLiteTelemetryStore) -> None:
+    title, status = live_status(view)
     st.markdown(
-        f'<section class="state-panel {css_class}" role="status" aria-live="polite">'
-        f'<h2>{title}</h2><p>{caption}</p></section>',
+        f'<section class="state-panel state-{status}" role="status" aria-live="polite">'
+        f'<h2>{title}</h2></section>',
         unsafe_allow_html=True,
     )
+    if view.state == "empty":
+        st.info("Waiting for readings from the selected source.")
+        return
+    latest = view.recent_readings[-1]
     received = (f"Received at {format_myt(view.received_at)}"
                 if view.received_at is not None else "Received time unavailable")
     st.caption(f"Measured at {format_myt(latest.timestamp)} · {received} · "
                f"Sample age {view.sample_age_seconds} s")
+    origin = latest.data_origin
+    if origin != "sensor":
+        st.caption(f"Source: {REPORT_SOURCES[origin][0]}")
+    with st.expander("Technical details"):
+        st.text(f"Monitor: {latest.device_id} · Profile: {latest.profile_id}")
+        st.text(f"Firmware: {latest.firmware_version} · Source: {REPORT_SOURCES[origin][0]}")
+        st.caption("Sensor mode does not establish calibration. "
+                   "Monitor IDs can be reused across sensor and simulation runs.")
+        st.caption(view.quality_note)
     fresh = view.connection_state is ConnectionState.ONLINE
-    if not fresh:
-        st.caption("Charts end at the last recorded timestamp. "
-                   "No energy is extrapolated while readings are unavailable.")
     power = view.latest_power_w or 0
     power_format = ",.1f" if abs(power) < 100 else ",.0f"
     primary = st.columns(3)
@@ -436,36 +447,33 @@ def render_live_state(view: LiveView) -> None:
         build_live_power_figure(view, start_threshold_w=1000.0),
         chart_key="live_power_chart",
     )
-    st.caption(
-        "Cyan: recorded power · magenta dashed: 1,000 W start threshold · orange band: "
-        "detected cycle. Five-second sampling."
-    )
+    with st.container(key="live-electrical-pair"):
+        voltage, current = st.columns(2)
+        for column, metric in ((voltage, "Voltage"), (current, "Current")):
+            with column:
+                render_resettable_chart(
+                    build_electrical_figure(view.recent_readings, metric, elapsed=False),
+                    chart_key=f"live_{metric.lower()}",
+                )
 
     if view.active_cycle is not None:
-        origin = view.active_cycle.data_origin
-        active = st.columns(3)
-        active[0].metric("Cycle elapsed so far" if fresh else "Last known cycle elapsed",
-            f"{view.elapsed_seconds or 0} s")
-        active[1].metric(
-            f"{'Simulated' if origin == 'simulated' else 'Recorded'} cycle energy so far",
-            f"{view.energy_so_far_kwh or 0:.5f} kWh",
-        )
-        active[2].metric(
-            "Estimated gross cycle charge so far",
-            _charge_value(view.charge_so_far),
+        active = view.active_cycle
+        st.subheader("Current cycle")
+        _live_cycle_tiles(
+            f"{active.duration_seconds} s", "Cycle energy so far",
+            active.meter_energy_kwh, _charge_value(view.charge_so_far), view.charge_so_far,
         )
     if view.last_cycle is not None:
+        last = view.last_cycle
         st.subheader("Last completed cycle")
-        receipt = st.columns(3)
-        receipt[0].metric("Cycle duration", f"{view.last_cycle.duration_seconds} s")
-        receipt[1].metric(view.last_cycle.energy_label, f"{view.last_cycle.energy_kwh:.5f} kWh")
-        receipt[2].metric("Estimated gross cycle charge", view.last_cycle.charge_text)
+        _live_cycle_tiles(
+            f"{last.duration_seconds} s", last.energy_label, last.energy_kwh,
+            last.charge_text, last.tariff_estimate,
+        )
     energy_figure = build_cycle_energy_figure(view)
     if energy_figure is not None:
-        render_resettable_chart(
-            energy_figure,
-            chart_key="live_cycle_energy_chart",
-        )
+        add_cycle_comparison(energy_figure, view, store)
+        render_resettable_chart(energy_figure, chart_key="live_cycle_energy_chart")
 
     if view.recent_readings:
         latest = view.recent_readings[-1]
@@ -479,11 +487,89 @@ def render_live_state(view: LiveView) -> None:
             build_power_quality_figure(view),
             chart_key="live_power_quality_chart",
         )
-        st.caption(
-            "Magenta: frequency · green: power factor · dashed: nominal 50 Hz reference. "
-            "This is not an automatic pass/fail assessment."
+def _live_cycle_tiles(
+    duration: str, energy_label: str, energy: float, charge: str, estimate: TariffEstimate | None,
+) -> None:
+    with st.container(key=f"cycle-tiles-{energy_label.lower().replace(' ', '-')}"):
+        duration_col, energy_col = st.columns(2)
+        duration_col.metric("Cycle duration", duration)
+        energy_col.metric(energy_label, f"{energy:.5f} kWh")
+        st.metric("Estimated gross cycle charge", charge)
+        _charge_caption(estimate)
+
+
+def build_electrical_figure(
+    readings: list[TelemetryReading], metric: str, *, elapsed: bool,
+) -> go.Figure:
+    field, unit, color, digits = {
+        "Voltage": ("voltage_v", "V", "#FFC46B", 1),
+        "Current": ("current_a", "A", "#72F6C7", 3),
+    }[metric]
+    times = [r.timestamp for r in readings]
+    x = ([(t - times[0]).total_seconds() for t in times] if elapsed
+         else [malaysia_time(t) for t in times])
+    y = [getattr(r, field) if r.quality_status.value == "valid" else None for r in readings]
+    # Insert gaps between separated samples so the chart never implies a measurement in between.
+    for index in range(len(times) - 1, 0, -1):
+        if (times[index] - times[index - 1]).total_seconds() > 5:
+            x.insert(index, x[index])
+            y.insert(index, None)
+    time_hover = "%{x:g} s" if elapsed else "%{x|%H:%M:%S} MYT"
+    figure = go.Figure(go.Scatter(
+        x=x, y=y, name=metric, mode="lines+markers", connectgaps=False,
+        marker={"size": 4}, line={"color": color, "width": 2},
+        hovertemplate=f"{time_hover}<br>%{{y:.{digits}f}} {unit}<extra></extra>",
+    ))
+    figure.update_layout(
+        **_transparent_chart_layout(height=285),
+        title={"text": metric if elapsed else f"Live {metric}", "x": 0.02},
+        xaxis_title="Elapsed (s)" if elapsed else "Recorded time (MYT)",
+        yaxis_title=f"{metric} ({unit})", showlegend=False,
+    )
+    return figure
+
+
+def add_cycle_comparison(
+    figure: go.Figure, view: LiveView, store: SQLiteTelemetryStore,
+) -> None:
+    if view.active_cycle is not None or view.last_cycle is None:
+        return
+    latest = view.recent_readings[-1]
+    candidates = {}
+    for row in store.fetch_report_cycles(latest.profile_id, latest.device_id, limit=20):
+        if (row["cycle_id"] == str(view.last_cycle.cycle_id)
+                or row.get("record_source") != "measured"
+                or row.get("data_origin") != latest.data_origin):
+            continue
+        description = row.get("custom_label") or row.get("effective_volume")
+        label = format_myt(str(row["started_at"]))
+        if description and description != "unknown":
+            label += f" · {description}"
+        candidates[row["cycle_id"]] = label
+    if not candidates:
+        return
+    selected = st.multiselect(
+        "Compare completed cycles", list(candidates), format_func=candidates.__getitem__,
+        max_selections=3,
+        key=f"energy-compare-{latest.device_id}-{latest.profile_id}-{latest.data_origin}",
+    )
+    if not selected:
+        return
+    figure.update_traces(name=f"Latest · {format_myt(view.last_cycle.started_at)}")
+    for cycle_id, color, dash in zip(
+        selected, ("#3BD7FF", "#FFC46B", "#E99AFF"), ("dash", "dot", "dashdot"),
+        strict=False,
+    ):
+        detail = get_cycle_detail(store, cycle_id, None)
+        if not detail.readings:
+            continue
+        elapsed, values = cycle_energy_points(detail.readings, detail.summary.meter_energy_kwh)
+        figure.add_scatter(
+            x=elapsed, y=values, mode="lines+markers", name=candidates[cycle_id],
+            line={"color": color, "dash": dash}, connectgaps=False,
+            hovertemplate="%{x:g} s<br>%{y:.5f} kWh<extra>%{fullData.name}</extra>",
         )
-    st.caption(view.quality_note)
+    figure.update_layout(showlegend=True, legend={"orientation": "h", "y": -0.25})
 
 
 def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figure:
@@ -652,26 +738,35 @@ def build_power_quality_figure(view: LiveView) -> go.Figure:
     return figure
 
 
-def build_cycle_energy_figure(view: LiveView) -> go.Figure | None:
-    readings = view.cycle_readings
-    if not readings:
-        return None
+def cycle_energy_points(
+    readings: list[TelemetryReading], measured_total: float,
+) -> tuple[list[float], list[float | None]]:
     started_at = readings[0].timestamp
     elapsed = [(reading.timestamp - started_at).total_seconds() for reading in readings]
     baseline = readings[0].cumulative_energy_kwh
-    measured_total = (
-        view.active_cycle.meter_energy_kwh
-        if view.active_cycle is not None
-        else view.last_cycle.energy_kwh
-        if view.last_cycle is not None
-        else 0.0
-    )
     observed_span = max(0.0, readings[-1].cumulative_energy_kwh - baseline)
     first_increment = max(0.0, measured_total - observed_span)
     energy = [
         first_increment + max(0.0, reading.cumulative_energy_kwh - baseline)
+        if reading.quality_status.value == "valid" else None
         for reading in readings
     ]
+    for index in range(len(readings) - 1, 0, -1):
+        if elapsed[index] - elapsed[index - 1] > 5:
+            elapsed.insert(index, elapsed[index])
+            energy.insert(index, None)
+    return elapsed, energy
+
+
+def build_cycle_energy_figure(view: LiveView) -> go.Figure | None:
+    readings = view.cycle_readings
+    if not readings:
+        return None
+    measured_total = (
+        view.active_cycle.meter_energy_kwh if view.active_cycle is not None
+        else view.last_cycle.energy_kwh if view.last_cycle is not None else 0.0
+    )
+    elapsed, energy = cycle_energy_points(readings, measured_total)
     state = (
         "Last known cycle · awaiting fresh readings" if view.state == "unconfirmed"
         and view.active_cycle is not None else "In progress" if view.active_cycle is not None

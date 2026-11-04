@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -71,34 +69,6 @@ def monthly_usage_context() -> Decimal | None:
     except (InvalidOperation, ValueError):
         return None
     return value if value >= 0 else None
-
-
-def owner_can_edit() -> bool:
-    if not use_supabase:
-        return True
-    password = os.environ.get("ENERGY_MONITOR_EDIT_PASSWORD", "")
-    fingerprint = hashlib.sha256(password.encode()).hexdigest() if password else ""
-    authorized = bool(password) and hmac.compare_digest(
-        st.session_state.get("owner_session", ""), fingerprint
-    )
-    with st.expander("Owner controls"):
-        if authorized:
-            st.caption("Editing unlocked for this session.")
-            if st.button("Lock editing"):
-                st.session_state.pop("owner_session", None)
-                st.rerun()
-        elif not password:
-            st.caption("Viewing only. Owner editing is not configured.")
-        else:
-            with st.form("owner_login", clear_on_submit=True):
-                entered = st.text_input("Owner password", type="password")
-                submitted = st.form_submit_button("Unlock editing")
-            if submitted:
-                if hmac.compare_digest(entered.encode(), password.encode()):
-                    st.session_state.owner_session = fingerprint
-                    st.rerun()
-                st.error("Incorrect owner password")
-    return authorized
 
 
 def demo_database_path() -> Path:
@@ -260,11 +230,6 @@ def render_reports() -> None:
                         )
                     except ValueError as exc:
                         st.error(str(exc))
-        elif not can_edit:
-            st.caption(
-                "Viewing saved reports only. "
-                "Owner controls unlock generation; viewing stays public."
-            )
         reports = history(profile, device)
         if not reports:
             st.info(
@@ -311,14 +276,6 @@ def render_reports() -> None:
         st.error("Report validation failed. Invalid history was not displayed.")
 
 st.title("Energy Monitor")
-st.caption("Live electrical telemetry · automatic load-cycle detection · usage insights")
-if use_demo:
-    st.caption("Data source: demonstration mode · simulated snapshot · not a live measurement")
-elif use_supabase:
-    st.caption("Data source: Supabase cloud with local cache")
-else:
-    st.caption("Data source: local development database")
-
 source_options = {
     "Sensor-mode records": "sensor", "Simulated test records": "simulated",
     "Manual entries": "manual", "Unverified / mixed": "unverified", "All records": "all",
@@ -327,12 +284,8 @@ source_filter = source_options[st.selectbox(
     "Data source filter", list(source_options), index=0 if use_supabase else 4,
     key="data_source_filter",
 )]
-st.caption("Source labels describe the record origin, separately from cycle assessment. "
-           "Historical test records are retained.")
-
-can_edit = owner_can_edit()
-if isinstance(store, SupabaseCycleStore):
-    store.can_edit = can_edit
+# Local report/manual tools stay available for offline development.
+can_edit = not use_supabase
 
 controls = st.columns([2, 2, 1])
 with controls[0]:
@@ -355,11 +308,7 @@ if st.session_state.mode == "Live":
     def live_panel() -> None:
         sync_cloud_source()
         view = get_live_view(store, dashboard_now(), source_filter=source_filter)
-        st.markdown(
-            render_command_bar(view.connection_state, view.updated_at),
-            unsafe_allow_html=True,
-        )
-        render_live_state(view)
+        render_live_state(view, store)
 
     live_panel()
 elif st.session_state.mode == "Cycles":
