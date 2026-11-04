@@ -1111,86 +1111,32 @@ def render_tariff_disclosure(
         st.markdown(tariff_disclosure_text(estimate, energy_label))
 
 
-def render_cycle_label(
-    store: SQLiteTelemetryStore,
-    cycle_id: UUID,
-    current: str | None,
-) -> None:
-    st.subheader("Label this cycle")
-    st.caption(
-        "Create reusable labels for an appliance, volume, operating mode, or test condition."
-    )
-    select_key = f"cycle_label_{cycle_id}"
-    new_label_key = f"new_cycle_label_{cycle_id}"
-    error_key = f"cycle_label_error_{cycle_id}"
-
-    with st.expander("Add a reusable label", expanded=not store.list_cycle_labels()):
-        st.text_input(
-            "New label",
-            max_chars=40,
-            placeholder="For example: 0.5 L or Full kettle",
-            key=new_label_key,
-        )
-        if st.button("Add label", key=f"add_cycle_label_{cycle_id}"):
-            try:
-                canonical = store.add_cycle_label(st.session_state[new_label_key])
-                st.session_state[select_key] = canonical
-                st.session_state[error_key] = None
-                st.rerun()
-            except ValueError as exc:
-                st.session_state[error_key] = str(exc)
-
-    if st.session_state.get(error_key):
-        st.error(st.session_state[error_key])
-
-    labels = store.list_cycle_labels()
-    if not labels:
-        st.info("Add your first reusable label before assigning this cycle.")
-        return
-
-    if select_key not in st.session_state:
-        st.session_state[select_key] = current if current in labels else labels[0]
-    selected = st.selectbox("Saved labels", labels, key=select_key)
-
-    def save_selected() -> None:
+def render_cycle_annotation(store: SQLiteTelemetryStore, cycle_id: UUID) -> None:
+    with st.expander("Cycle annotation"):
         try:
-            store.save_cycle_label(cycle_id, str(selected))
-            st.session_state[error_key] = None
-            st.success("Cycle label saved")
-        except Exception:
-            st.session_state[error_key] = "Label was not saved"
-            st.error(st.session_state[error_key])
-
-    save, later = st.columns(2)
-    if save.button("Save to cycle", key=f"save_cycle_label_{cycle_id}", type="primary"):
-        save_selected()
-    if later.button("Label later", key=f"skip_cycle_label_{cycle_id}"):
-        st.caption("This cycle will remain unlabelled for now.")
-
-    with st.expander("Manage reusable labels"):
-        st.caption(
-            "Removing a label hides it from future choices. Existing cycle records keep it "
-            "for audit history. Adding the same label later restores it."
-        )
-        remove_key = f"remove_cycle_label_{cycle_id}"
-        label_to_remove = st.selectbox(
-            "Label to remove",
-            labels,
-            key=remove_key,
-        )
-        if st.button(
-            "Remove label",
-            icon=":material/delete:",
-            key=f"archive_cycle_label_{cycle_id}",
-        ):
-            try:
-                store.archive_cycle_label(str(label_to_remove))
-                st.session_state.pop(select_key, None)
-                if st.session_state.get("label_filter") == label_to_remove:
-                    st.session_state["label_filter"] = "All labels"
-                st.session_state[error_key] = None
-                st.success("Label removed from future choices")
-                st.rerun()
-            except ValueError as exc:
-                st.session_state[error_key] = str(exc)
-                st.error(st.session_state[error_key])
+            annotation = store.fetch_cycle_annotation(cycle_id)
+        except ValueError:
+            st.info("Annotations are currently unavailable.")
+            return
+        labels = store.list_cycle_labels()
+        with st.form(f"annotation-{cycle_id}-{annotation.get('id')}"):
+            label = st.text_input(
+                "Label", value=str(annotation.get("label") or ""), max_chars=40,
+            )
+            if labels:
+                existing = st.selectbox("Or reuse a label", ["", *labels])
+            else:
+                existing = ""
+            note = st.text_area("Optional note", value=str(annotation.get("note") or ""),
+                                max_chars=500)
+            st.caption("Shared annotation · separate from cycle assessment and training review")
+            if st.form_submit_button("Save annotation", type="primary"):
+                try:
+                    store.save_cycle_annotation(
+                        cycle_id, label=existing or label, note=note,
+                        expected_id=annotation.get("id"),
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Annotation saved.")

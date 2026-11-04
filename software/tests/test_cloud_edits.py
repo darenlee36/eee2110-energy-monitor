@@ -195,3 +195,63 @@ def test_cloud_report_history_can_discover_saved_reports(tmp_path, monkeypatch):
     assert store.fetch_reports() == [report.model_dump(mode="json")]
     with pytest.raises(ValueError, match="scope"):
         store.fetch_reports(device_id="monitor-001")
+
+def test_public_annotation_concurrency_and_idempotence(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from test_dashboard import build_dashboard_cycle_database
+
+    database = build_dashboard_cycle_database(tmp_path)
+    store = SQLiteTelemetryStore(database)
+    cycle = store.fetch_cycles()[0]
+    cycle_id = cycle["cycle_id"]
+    readings_before = store.fetch_cycle_readings(cycle_id)
+
+    def annotate(label):
+        try:
+            SQLiteTelemetryStore(database).save_cycle_annotation(
+                cycle_id, label=label, note="Shared note", expected_id=None,
+            )
+        except ValueError as exc:
+            return str(exc)
+        return "saved"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(annotate, ["Morning", "Evening"])) == [
+            "This annotation changed. Refresh before editing.", "saved",
+        ]
+    reopened = SQLiteTelemetryStore(database)
+    active = reopened.fetch_cycle_annotation(cycle_id)
+    reopened.save_cycle_annotation(cycle_id, label=active["label"], note=active["note"])
+    assert len(reopened.fetch_cycle_label_history(cycle_id)) == 1
+    reopened.save_cycle_annotation(
+        cycle_id, label=active["label"], note="Revised", expected_id=active["id"],
+    )
+    history = reopened.fetch_cycle_label_history(cycle_id)
+    assert [row["annotation_note"] for row in history] == ["Shared note", "Revised"]
+    assert sum(row["is_active"] for row in history) == 1
+    assert reopened.fetch_cycle_readings(cycle_id) == readings_before
+
+
+def test_public_cloud_write_only_sends_annotation_and_scope(tmp_path, monkeypatch):
+    from test_dashboard import build_dashboard_cycle_database
+
+    store = SupabaseCycleStore(build_dashboard_cycle_database(tmp_path), CONFIG)
+    cycle = store.fetch_cycles()[0]
+    calls = []
+    monkeypatch.setattr(store, "refresh_edits", lambda: None)
+
+    def rpc(name, payload):
+        calls.append((name, payload))
+        return {"status": "saved"}
+
+    monkeypatch.setattr(store, "_rpc", rpc)
+    with pytest.raises(ValueError, match="plain-text"):
+        store.save_cycle_annotation(cycle["cycle_id"], label="label", note="x" * 501)
+    assert not calls
+    store.save_cycle_annotation(cycle["cycle_id"], label=" Morning  mug ", note=" 0.5 L ")
+    assert calls == [("save_public_cycle_annotation", {
+        "p_cycle_id": cycle["cycle_id"], "p_device_id": cycle["device_id"],
+        "p_profile_id": cycle["profile_id"], "p_origin": cycle["data_origin"],
+        "p_label": "Morning mug", "p_note": "0.5 L", "p_expected_id": None,
+    })]

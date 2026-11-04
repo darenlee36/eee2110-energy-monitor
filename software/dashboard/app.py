@@ -10,12 +10,13 @@ from uuid import uuid4
 import streamlit as st
 from components import (
     build_cycle_figure,
+    build_electrical_figure,
     format_myt,
     render_anomaly_assessment,
     render_command_bar,
+    render_cycle_annotation,
     render_cycle_filters,
     render_cycle_history,
-    render_cycle_label,
     render_cycle_receipt,
     render_live_state,
     render_manual_cycle_entry,
@@ -357,14 +358,15 @@ elif st.session_state.mode == "Cycles":
                 build_cycle_figure(detail, start_threshold_w=1000.0),
                 chart_key="cycle_detail_chart",
             )
-            st.caption(
-                f"Cyan: recorded power · magenta dashed: 1,000 W start threshold · "
-                f"green rings: cycle boundaries. {detail.chart_summary}"
-            )
+            for metric in ("Voltage", "Current"):
+                render_resettable_chart(
+                    build_electrical_figure(detail.readings, metric, elapsed=True),
+                    chart_key=f"cycle_{metric.lower()}_{detail.summary.cycle_id}",
+                )
         else:
             st.info(detail.chart_summary)
-        if can_edit:
-            render_cycle_label(store, detail.summary.cycle_id, detail.cycle_label)
+        if detail.summary.status is CycleStatus.COMPLETED:
+            render_cycle_annotation(store, detail.summary.cycle_id)
         render_tariff_disclosure(
             detail.tariff_estimate,
             detail.energy_label,

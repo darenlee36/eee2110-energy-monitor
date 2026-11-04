@@ -201,6 +201,15 @@ class SQLiteTelemetryStore:
                 connection.execute(
                     "ALTER TABLE appliance_cycles ADD COLUMN manual_notes TEXT"
                 )
+            annotation_columns = {
+                row["name"] for row in connection.execute(
+                    "PRAGMA table_info(cycle_label_assignments)"
+                )
+            }
+            if "annotation_note" not in annotation_columns:
+                connection.execute(
+                    "ALTER TABLE cycle_label_assignments ADD COLUMN annotation_note TEXT"
+                )
             label_columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(cycle_label_options)")
@@ -916,6 +925,67 @@ class SQLiteTelemetryStore:
         finally:
             connection.close()
 
+    @staticmethod
+    def _validated_annotation(label: str, note: str) -> tuple[str, str]:
+        label = SQLiteTelemetryStore._validated_cycle_label(label)
+        note = note.strip()
+        if (len(note) > 500 or any(not c.isprintable() for c in label)
+                or any(not c.isprintable() and c not in "\r\n\t" for c in note)):
+            raise ValueError("Use a plain-text label and a note of up to 500 characters.")
+        return label, note
+
+    def fetch_cycle_annotation(self, cycle_id: UUID | str) -> dict[str, object]:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT a.id, o.label, a.annotation_note AS note
+                FROM cycle_label_assignments a JOIN cycle_label_options o
+                ON a.label_option_id = o.id WHERE a.cycle_id = ? AND a.is_active = 1""",
+                (str(cycle_id),),
+            ).fetchone()
+        return dict(row) if row is not None else {}
+
+    def save_cycle_annotation(
+        self, cycle_id: UUID | str, *, label: str, note: str, expected_id: object = None,
+    ) -> None:
+        cycle_id = str(UUID(str(cycle_id)))
+        label, note = self._validated_annotation(label, note)
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM appliance_cycles WHERE cycle_id = ? AND status = 'completed'",
+                (cycle_id,),
+            ).fetchone() is None:
+                raise ValueError("Only completed cycles can be annotated.")
+            current = connection.execute(
+                """SELECT a.id, a.annotation_note, o.label
+                FROM cycle_label_assignments a JOIN cycle_label_options o
+                ON a.label_option_id = o.id WHERE a.cycle_id = ? AND a.is_active = 1""",
+                (cycle_id,),
+            ).fetchone()
+            if (current is not None and current["label"].casefold() == label.casefold()
+                    and (current["annotation_note"] or "") == note):
+                return
+            if (current["id"] if current is not None else None) != expected_id:
+                raise ValueError("This annotation changed. Refresh before editing.")
+            connection.execute("INSERT OR IGNORE INTO cycle_label_options(label) VALUES (?)",
+                               (label,))
+            option = connection.execute(
+                "SELECT id FROM cycle_label_options WHERE label = ? COLLATE NOCASE AND is_active",
+                (label,),
+            ).fetchone()
+            if option is None:
+                raise ValueError("That label is archived.")
+            connection.execute(
+                "UPDATE cycle_label_assignments SET is_active = 0 WHERE cycle_id = ? AND is_active",
+                (cycle_id,),
+            )
+            connection.execute(
+                """INSERT INTO cycle_label_assignments
+                (cycle_id, label_option_id, source, is_active, annotation_note)
+                VALUES (?, ?, 'dashboard', 1, ?)""",
+                (cycle_id, option["id"], note or None),
+            )
+
     def fetch_cycle_label(self, cycle_id: UUID | str) -> str | None:
         cycle = self.fetch_cycle(cycle_id)
         if cycle is None:
@@ -932,7 +1002,7 @@ class SQLiteTelemetryStore:
                 """
                 SELECT assignments.id, assignments.cycle_id,
                        options.label, assignments.source,
-                       assignments.is_active, assignments.created_at
+                       assignments.is_active, assignments.created_at, assignments.annotation_note
                 FROM cycle_label_assignments AS assignments
                 JOIN cycle_label_options AS options
                   ON options.id = assignments.label_option_id

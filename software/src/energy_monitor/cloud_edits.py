@@ -152,6 +152,40 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
             "notes": cycle.get("manual_notes"),
         })
 
+    def fetch_cycle_annotation(self, cycle_id: UUID | str) -> dict[str, object]:
+        annotation = self._rpc(
+            "dashboard_cycle_annotation", {"p_cycle_id": str(UUID(str(cycle_id)))}
+        )
+        if not isinstance(annotation, dict):
+            raise ValueError("Cycle annotation could not be loaded.")
+        return annotation
+
+    def save_cycle_annotation(
+        self, cycle_id: UUID | str, *, label: str, note: str, expected_id: object = None,
+    ) -> None:
+        cycle_id = str(UUID(str(cycle_id)))
+        cycle = self.fetch_cycle(cycle_id)
+        if cycle is None or cycle["status"] != "completed":
+            raise ValueError("Only completed cycles can be annotated.")
+        label, note = self._validated_annotation(label, note)
+        result = self._rpc("save_public_cycle_annotation", {
+            "p_cycle_id": cycle_id,
+            "p_device_id": cycle["device_id"],
+            "p_profile_id": cycle["profile_id"],
+            "p_origin": cycle["data_origin"],
+            "p_label": label,
+            "p_note": note,
+            "p_expected_id": str(UUID(str(expected_id))) if expected_id is not None else None,
+        })
+        status = result.get("status") if isinstance(result, dict) else None
+        if status != "saved":
+            raise ValueError({
+                "conflict": "This annotation changed. Refresh before editing.",
+                "unavailable": "This cycle or label is unavailable for public editing.",
+                "limited": "Too many recent edits to this cycle. Try again in a minute.",
+            }.get(status, "The annotation save could not be confirmed."))
+        self.refresh_edits()
+
     def add_manual_cycle(self, record: ManualCycleRecord) -> UUID:
         # A retry after a lost response must not create a second manual record.
         identity = self.config.url + ":manual:" + record.model_dump_json()

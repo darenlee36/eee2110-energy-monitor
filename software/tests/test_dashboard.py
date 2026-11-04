@@ -32,51 +32,27 @@ def isolate_dashboard_source(monkeypatch: object) -> None:
     monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
 
 
-def test_cloud_edit_controls_require_owner_password(tmp_path: Path, monkeypatch: object) -> None:
+def test_public_cloud_has_annotation_without_admin_controls(tmp_path, monkeypatch):
+    database = build_dashboard_cycle_database(tmp_path)
     monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
     monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-server-key")
-    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "test-owner-password")
-    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "cloud.db"))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     monkeypatch.setattr(
         "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_edits", lambda s: None
+    )
+    monkeypatch.setattr(
+        "energy_monitor.cloud_edits.SupabaseCycleStore.fetch_cycle_annotation", lambda *a: {}
     )
     monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Cycles"
+    app.session_state["data_source_filter"] = "All records"
     app.run()
     assert not app.exception
-    assert not any("Add manual cycle" in e.label for e in app.expander)
-    app.text_input[0].set_value("wrong-password")
-    next(b for b in app.button if b.label == "Unlock editing").click().run()
-    assert app.error[0].value == "Incorrect owner password"
-    assert not any("Add manual cycle" in e.label for e in app.expander)
-    app.text_input[0].set_value("test-owner-password")
-    next(b for b in app.button if b.label == "Unlock editing").click().run()
-    assert not app.exception
-    assert any("Add manual cycle" in e.label for e in app.expander)
-    next(b for b in app.button if b.label == "Lock editing").click().run()
-    assert not any("Add manual cycle" in e.label for e in app.expander)
-
-
-def test_cloud_owner_configuration_missing_fails_closed(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
-    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
-    monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-server-key")
-    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "")
-    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "unconfigured.db"))
-    monkeypatch.setattr(
-        "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_edits", lambda s: None
-    )
-    monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
-    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
-    app.session_state["mode"] = "Cycles"
-    app.run()
-    assert not app.exception
-    assert not any("Add manual cycle" in e.label for e in app.expander)
-    assert any("Viewing only" in c.value for c in app.caption)
-    source = next(s for s in app.selectbox if s.label == "Data source filter")
-    assert source.value == "Sensor-mode records"
+    assert any(e.label == "Cycle annotation" for e in app.expander)
+    assert not any(e.label in ("Owner controls", "Add manual cycle") for e in app.expander)
+    assert not any(i.label == "Owner password" for i in app.text_input)
 
 
 def build_dashboard_cycle_database(tmp_path: Path) -> Path:
@@ -102,7 +78,7 @@ def test_dashboard_empty_state_has_refresh_controls_and_no_fake_metrics(
     assert not app.exception
     assert app.title[0].value == "Energy Monitor"
     assert any(button.label == "Refresh now" for button in app.button)
-    assert "No telemetry" in app.info[0].value
+    assert "Waiting for readings" in app.info[0].value
     labels = [metric.label for metric in app.metric]
     assert "Energy in view" not in labels
     assert "Estimated cost" not in labels
@@ -322,22 +298,18 @@ def test_user_created_cycle_label_is_saved_and_reusable(
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
     app.segmented_control[0].set_value("Cycles").run()
 
-    next(item for item in app.text_input if item.label == "New label").set_value(
-        "Morning mug"
-    ).run()
-    next(button for button in app.button if button.label == "Add label").click().run()
-    next(item for item in app.selectbox if item.label == "Saved labels").set_value(
-        "Morning mug"
-    ).run()
-    next(button for button in app.button if button.label == "Save to cycle").click().run()
+    next(item for item in app.text_input if item.label == "Label").set_value("Morning mug")
+    next(item for item in app.text_area if item.label == "Optional note").set_value("0.5 L")
+    next(button for button in app.button if button.label == "Save annotation").click().run()
 
     store = SQLiteTelemetryStore(database)
     cycle_id = str(store.fetch_cycles()[0]["cycle_id"])
     assert store.fetch_cycle_label(cycle_id) == "Morning mug"
-    assert app.success[-1].value == "Cycle label saved"
+    assert store.fetch_cycle_annotation(cycle_id)["note"] == "0.5 L"
+    assert app.success[-1].value == "Annotation saved."
 
 
-def test_dashboard_can_remove_reusable_label_without_erasing_cycle_history(
+def test_dashboard_keeps_archival_outside_public_annotation(
     tmp_path: Path,
     monkeypatch: object,
 ) -> None:
@@ -350,11 +322,11 @@ def test_dashboard_can_remove_reusable_label_without_erasing_cycle_history(
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
     app.segmented_control[0].set_value("Cycles").run()
 
-    next(button for button in app.button if button.label == "Remove label").click().run()
+    assert not any(button.label == "Remove label" for button in app.button)
 
     updated = SQLiteTelemetryStore(database)
     assert not app.exception
-    assert updated.list_cycle_labels() == []
+    assert updated.list_cycle_labels() == ["Morning mug"]
     assert updated.fetch_cycle_label(cycle_id) == "Morning mug"
 
 
@@ -690,7 +662,7 @@ def test_stale_live_display_labels_last_known_values(tmp_path, monkeypatch):
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
     assert not app.exception
-    assert any("Waiting for fresh readings" in m.value for m in app.markdown)
+    assert any("Offline" in m.value for m in app.markdown)
     assert "Last recorded power" in [m.label for m in app.metric]
     assert not any("Active load detected" in m.value for m in app.markdown)
 
