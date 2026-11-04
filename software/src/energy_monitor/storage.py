@@ -1046,6 +1046,17 @@ class SQLiteTelemetryStore:
                     ON CONFLICT(cycle_id) DO UPDATE SET manual_notes = excluded.manual_notes""",
                     {**values, "summary_json": summary.model_dump_json(), "manual_notes": notes},
                 )
+            # The cloud snapshot contains all active assignments, including an empty set.
+            active_cycle_ids = {str(UUID(item["cycle_id"])) for item in state["assignments"]}
+            cached_active = connection.execute(
+                "SELECT cycle_id FROM cycle_label_assignments WHERE is_active = 1"
+            ).fetchall()
+            connection.executemany(
+                "UPDATE cycle_label_assignments SET is_active = 0 "
+                "WHERE cycle_id = ? AND is_active = 1",
+                [(row["cycle_id"],) for row in cached_active
+                 if row["cycle_id"] not in active_cycle_ids],
+            )
             for item in state["assignments"]:
                 cycle_id = str(UUID(item["cycle_id"]))
                 if not connection.execute(

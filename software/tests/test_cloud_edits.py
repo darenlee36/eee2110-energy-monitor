@@ -61,6 +61,14 @@ def test_manual_record_and_archived_label_survive_fresh_cache(tmp_path, monkeypa
     assert cycle["manual_notes"] == "Reference reading"
     assert len(restarted.fetch_cycle_label_history(cycle_id)) == 1
 
+    state["assignments"] = []
+    restarted.refresh_edits()
+    restarted.refresh_edits()
+    assert restarted.fetch_cycle_label(cycle_id) is None
+    history = restarted.fetch_cycle_label_history(cycle_id)
+    assert len(history) == 1
+    assert not history[0]["is_active"]
+
 
 def test_failed_cloud_write_does_not_create_local_success(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda url, **kwargs: httpx.Response(
