@@ -66,16 +66,24 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
             raise ValueError("Owner login required to generate cloud reports")
         parsed = validate_report(report)
         try:
-            response = httpx.post(
-                f"{self.config.url}/rest/v1/reports",
-                headers={
-                    "apikey": self.config.service_role_key,
-                    "Prefer": "resolution=ignore-duplicates,return=minimal",
-                },
-                params={"on_conflict": "report_id"},
-                json=parsed.model_dump(mode="json"), timeout=15,
-            )
-            response.raise_for_status()
+            payload = parsed.model_dump(mode="json")
+            cycle = parsed.evidence_snapshot["cycles"][0]
+            if (parsed.kind == "cycle" and parsed.engine == "template"
+                    and cycle["record_source"] == "measured" and cycle["data_origin"] == "sensor"):
+                confirmed = self._rpc("save_completed_sensor_report", {"report": payload})
+                if confirmed != str(parsed.report_id):
+                    raise ValueError("Cloud cycle and report receipt does not match")
+            else:
+                response = httpx.post(
+                    f"{self.config.url}/rest/v1/reports",
+                    headers={
+                        "apikey": self.config.service_role_key,
+                        "Prefer": "resolution=ignore-duplicates,return=minimal",
+                    },
+                    params={"on_conflict": "report_id"},
+                    json=payload, timeout=15,
+                )
+                response.raise_for_status()
             if self.fetch_report(str(parsed.report_id)) is None:
                 raise ValueError("report not returned")
         except (httpx.HTTPError, ValueError, SupabaseSyncError) as exc:

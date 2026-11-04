@@ -193,6 +193,10 @@ class SQLiteTelemetryStore:
                     DEFAULT 'measured' CHECK (record_source IN ('measured', 'manual'))
                     """
                 )
+            if "completion_seen_at" not in cycle_columns:
+                connection.execute(
+                    "ALTER TABLE appliance_cycles ADD COLUMN completion_seen_at TEXT"
+                )
             if "manual_notes" not in cycle_columns:
                 connection.execute(
                     "ALTER TABLE appliance_cycles ADD COLUMN manual_notes TEXT"
@@ -272,7 +276,9 @@ class SQLiteTelemetryStore:
         ).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
 
-    def insert_batch(self, batch: TelemetryBatch) -> BatchResult:
+    def insert_batch(
+        self, batch: TelemetryBatch, *, received_times: dict[int, str] | None = None
+    ) -> BatchResult:
         batch_id = str(batch.batch_id)
         request_hash = self._request_hash(batch)
         connection = self._connect()
@@ -291,6 +297,8 @@ class SQLiteTelemetryStore:
                     raise IdempotencyConflict(
                         "batch_id was already used for a different request body"
                     )
+                if received_times:
+                    self._save_received_times(connection, batch, received_times)
                 connection.commit()
                 return BatchResult(
                     batch_id=batch.batch_id,
@@ -322,6 +330,8 @@ class SQLiteTelemetryStore:
                 )
                 accepted += cursor.rowcount
 
+            if received_times:
+                self._save_received_times(connection, batch, received_times)
             duplicates = len(batch.readings) - accepted
             connection.execute(
                 """
@@ -342,6 +352,15 @@ class SQLiteTelemetryStore:
             raise
         finally:
             connection.close()
+
+    @staticmethod
+    def _save_received_times(
+        connection: sqlite3.Connection, batch: TelemetryBatch, times: dict[int, str]
+    ) -> None:
+        connection.executemany(
+            "UPDATE telemetry SET received_at = ? WHERE device_id = ? AND sample_sequence = ?",
+            [(times[r.sample_sequence], r.device_id, r.sample_sequence) for r in batch.readings],
+        )
 
     def count_readings(self) -> int:
         with self._connect() as connection:
@@ -378,7 +397,9 @@ class SQLiteTelemetryStore:
         fields = TelemetryReading.model_fields
         return TelemetryReading.model_validate({name: row[name] for name in fields})
 
-    def process_cycles(self, settings: CycleDetectionSettings) -> list[CycleSummary]:
+    def process_cycles(
+        self, settings: CycleDetectionSettings, *, observed_at: datetime | None = None
+    ) -> list[CycleSummary]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM telemetry ORDER BY timestamp ASC, id ASC"
@@ -408,16 +429,27 @@ class SQLiteTelemetryStore:
             )
             for cycle in cycles:
                 values = cycle.model_dump(mode="json")
+                latest = grouped[(cycle.device_id, cycle.profile_id)][-1].timestamp
+                end = cycle.ended_at
+                # Suppress old completion banners when importing historical backlog.
+                seen = (
+                    observed_at if observed_at and end
+                    and (latest - end).total_seconds() <= settings.terminating_gap_seconds
+                    else end if observed_at is None else None
+                )
+                values["completion_seen_at"] = (
+                    seen.isoformat() if cycle.status.value == "completed" and seen else None
+                )
                 connection.execute(
                     """
                     INSERT INTO appliance_cycles (
                         cycle_id, device_id, profile_id, started_at, ended_at,
                         start_sequence, end_sequence, status, assessment,
-                        summary_json, detection_version
+                        summary_json, detection_version, completion_seen_at
                     ) VALUES (
                         :cycle_id, :device_id, :profile_id, :started_at, :ended_at,
                         :start_sequence, :end_sequence, :status, :assessment,
-                        :summary_json, :detection_version
+                        :summary_json, :detection_version, :completion_seen_at
                     )
                     ON CONFLICT(cycle_id) DO UPDATE SET
                         ended_at = excluded.ended_at,
@@ -425,6 +457,12 @@ class SQLiteTelemetryStore:
                         status = excluded.status,
                         assessment = excluded.assessment,
                         summary_json = excluded.summary_json,
+                        completion_seen_at = CASE
+                            WHEN appliance_cycles.status = 'completed'
+                             AND excluded.status = 'completed'
+                            THEN appliance_cycles.completion_seen_at
+                            ELSE excluded.completion_seen_at
+                        END,
                         detection_version = excluded.detection_version,
                         updated_at = CURRENT_TIMESTAMP
                     """,
@@ -556,6 +594,8 @@ class SQLiteTelemetryStore:
         result["manual_notes"] = (
             row["manual_notes"] if "manual_notes" in row.keys() else None
         )
+        if "completion_seen_at" in row.keys():
+            result["completion_seen_at"] = row["completion_seen_at"]
         if "created_at" in row.keys():
             result["created_at"] = row["created_at"]
             result["updated_at"] = row["updated_at"]

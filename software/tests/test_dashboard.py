@@ -163,7 +163,7 @@ def test_dashboard_exposes_live_and_cycles_modes(
 
     assert not app.exception
     assert app.segmented_control[0].options == ["Live", "Cycles", "Reports"]
-    assert any(toggle.label == "Auto-refresh every 5 seconds" for toggle in app.toggle)
+    assert any(toggle.label == "Auto-refresh every 3 seconds" for toggle in app.toggle)
 
 
 def test_cycles_mode_defaults_to_latest_completed_cycle(

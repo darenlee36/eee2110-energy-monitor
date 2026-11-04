@@ -343,7 +343,7 @@ with controls[0]:
         label_visibility="collapsed",
     )
 with controls[1]:
-    st.toggle("Auto-refresh every 5 seconds", key="auto_refresh")
+    st.toggle("Auto-refresh every 3 seconds", key="auto_refresh")
 with controls[2]:
     if st.button("Refresh now", type="primary", width="stretch"):
         st.rerun()
@@ -351,7 +351,7 @@ with controls[2]:
 
 if st.session_state.mode == "Live":
 
-    @st.fragment(run_every="5s" if st.session_state.auto_refresh else None)
+    @st.fragment(run_every="3s" if st.session_state.auto_refresh else None)
     def live_panel() -> None:
         sync_cloud_source()
         view = get_live_view(store, dashboard_now(), source_filter=source_filter)

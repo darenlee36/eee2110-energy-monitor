@@ -15,8 +15,10 @@ from energy_monitor.metrics import derive_connection_state
 from energy_monitor.models import (
     ConnectionState,
     CycleAssessment,
+    CycleDetectionSettings,
     CycleStatus,
     CycleSummary,
+    QualityStatus,
     TariffEstimate,
     TelemetryReading,
     VolumeClass,
@@ -50,9 +52,11 @@ class CycleListItem(BaseModel):
 class LiveView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    state: Literal["empty", "idle", "heating", "cycle_complete", "unconfirmed"]
+    state: Literal["empty", "idle", "heating", "finalizing", "cycle_complete", "unconfirmed"]
     connection_state: ConnectionState
     updated_at: datetime | None
+    received_at: datetime | None = None
+    sample_age_seconds: int | None = None
     latest_power_w: float | None
     latest_voltage_v: float | None
     latest_current_a: float | None
@@ -245,7 +249,7 @@ def get_live_view(
     )
     active = None if active_row is None else _summary_from_row(active_row)
     completed_row = next(
-        (row for row in cycle_rows if row["status"] != CycleStatus.ACTIVE.value),
+        (row for row in cycle_rows if row["status"] == CycleStatus.COMPLETED.value),
         None,
     )
     monthly_usage = _monthly_usage_from_env()
@@ -265,12 +269,18 @@ def get_live_view(
     if connection is not ConnectionState.ONLINE:
         state = "unconfirmed"
     elif active is not None:
-        state: Literal["empty", "idle", "heating", "cycle_complete", "unconfirmed"] = "heating"
+        valid_tail = next(
+            (r for r in reversed(readings)
+             if r.timestamp >= active.started_at and r.quality_status is QualityStatus.VALID),
+            None,
+        )
+        stop_power = CycleDetectionSettings.simulation_defaults().stop_power_w
+        state = "finalizing" if valid_tail and valid_tail.active_power_w < stop_power else "heating"
     elif (
         completed_row is not None
-        and completed_row.get("ended_at") is not None
+        and completed_row.get("completion_seen_at") is not None
         and 0
-        <= (now - datetime.fromisoformat(str(completed_row["ended_at"]))).total_seconds()
+        <= (now - datetime.fromisoformat(str(completed_row["completion_seen_at"]))).total_seconds()
         <= 30
     ):
         state = "cycle_complete"
@@ -295,10 +305,13 @@ def get_live_view(
         quality_note = (f"Telemetry is {connection.value}; values are last recorded, "
                         "not a confirmed current load state. " + quality_note)
 
+    received = datetime.fromisoformat(str(rows[-1]["received_at"]))
     return LiveView(
         state=state,
         connection_state=connection,
         updated_at=latest.timestamp,
+        received_at=received if received.tzinfo is not None else None,
+        sample_age_seconds=max(0, int((now - latest.timestamp).total_seconds())),
         latest_power_w=latest.active_power_w,
         latest_voltage_v=latest.voltage_v,
         latest_current_a=latest.current_a,

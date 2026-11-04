@@ -386,6 +386,9 @@ def render_live_state(view: LiveView) -> None:
     state_labels = {
         "idle": ("Monitor ready", "Waiting for the next load cycle", "state-idle"),
         "heating": ("Active load detected", "A load cycle is being measured", "state-heating"),
+        "finalizing": (
+            "Finalizing cycle", "Waiting for enough low-power readings", "state-idle"
+        ),
         "unconfirmed": (
             "Waiting for fresh readings",
             "Last recorded values shown; current load state is unconfirmed",
@@ -411,17 +414,23 @@ def render_live_state(view: LiveView) -> None:
         f'<h2>{title}</h2><p>{caption}</p></section>',
         unsafe_allow_html=True,
     )
+    received = (f"Received at {format_myt(view.received_at)}"
+                if view.received_at is not None else "Received time unavailable")
+    st.caption(f"Measured at {format_myt(latest.timestamp)} · {received} · "
+               f"Sample age {view.sample_age_seconds} s")
     fresh = view.connection_state is ConnectionState.ONLINE
     if not fresh:
         st.caption("Charts end at the last recorded timestamp. "
                    "No energy is extrapolated while readings are unavailable.")
+    power = view.latest_power_w or 0
+    power_format = ",.1f" if abs(power) < 100 else ",.0f"
     primary = st.columns(3)
     primary[0].metric("Active power now" if fresh else "Last recorded power",
-        f"{view.latest_power_w or 0:,.0f} W")
+        f"{power:{power_format}} W")
     primary[1].metric("Voltage now" if fresh else "Last recorded voltage",
         f"{view.latest_voltage_v or 0:.1f} V")
     primary[2].metric("Current now" if fresh else "Last recorded current",
-        f"{view.latest_current_a or 0:.2f} A")
+        f"{view.latest_current_a or 0:.3f} A")
 
     render_resettable_chart(
         build_live_power_figure(view, start_threshold_w=1000.0),
@@ -445,7 +454,7 @@ def render_live_state(view: LiveView) -> None:
             "Estimated gross cycle charge so far",
             _charge_value(view.charge_so_far),
         )
-    elif view.last_cycle is not None:
+    if view.last_cycle is not None:
         st.subheader("Last completed cycle")
         receipt = st.columns(3)
         receipt[0].metric("Cycle duration", f"{view.last_cycle.duration_seconds} s")
@@ -497,9 +506,9 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
             fillcolor="rgba(59, 215, 255, 0.10)",
             customdata=custom_hover,
             hovertemplate=(
-                "%{x|%H:%M:%S}<br>%{y:,.0f} W"
+                "%{x|%H:%M:%S}<br>%{y:,.1f} W"
                 "<br>Voltage %{customdata[0]:.1f} V"
-                "<br>Current %{customdata[1]:.2f} A"
+                "<br>Current %{customdata[1]:.3f} A"
                 "<br>Quality %{customdata[2]}<extra></extra>"
             ),
         )
@@ -517,7 +526,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
                     "line": {"color": "#070812", "width": 2},
                     "size": 11,
                 },
-                hovertemplate="Current %{y:,.0f} W<extra></extra>",
+                hovertemplate="Current %{y:,.1f} W<extra></extra>",
             )
         )
         figure.add_hline(
@@ -887,7 +896,7 @@ def build_cycle_figure(detail: CycleDetail, start_threshold_w: float) -> go.Figu
             customdata=custom_hover,
             hovertemplate=(
                 "%{x:.0f} s<br>%{y:,.0f} W<br>Voltage %{customdata[0]:.1f} V"
-                "<br>Current %{customdata[1]:.2f} A"
+                "<br>Current %{customdata[1]:.3f} A"
                 "<br>Cycle energy %{customdata[2]:.5f} kWh<extra></extra>"
             ),
         )

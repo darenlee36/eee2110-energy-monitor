@@ -85,6 +85,7 @@ def sync_supabase_telemetry(
         raise SupabaseSyncError("Supabase telemetry response must be a list")
     readings: dict[str, list[TelemetryReading]] = defaultdict(list)
     next_cursor = cursor
+    received_times: dict[str, dict[int, str]] = defaultdict(dict)
     try:
         for row in rows:
             payload = dict(row)
@@ -98,6 +99,7 @@ def sync_supabase_telemetry(
             payload["timestamp"] = payload.pop("recorded_at")
             reading = TelemetryReading.model_validate(payload)
             readings[reading.device_id].append(reading)
+            received_times[reading.device_id][reading.sample_sequence] = row_cursor[0]
             next_cursor = row_cursor
     except (TypeError, KeyError, ValueError) as exc:
         raise SupabaseSyncError("Supabase returned invalid telemetry") from exc
@@ -108,12 +110,15 @@ def sync_supabase_telemetry(
             chunk = device_readings[start : start + 6]
             identity = "|".join(f"{item.device_id}:{item.sample_sequence}" for item in chunk)
             result = store.insert_batch(
-                TelemetryBatch(batch_id=uuid5(NAMESPACE_URL, identity), readings=chunk)
+                TelemetryBatch(batch_id=uuid5(NAMESPACE_URL, identity), readings=chunk),
+                received_times=received_times[chunk[0].device_id],
             )
             accepted += 0 if result.replayed else result.accepted
     if rows:
         # Reprocess before advancing, including recovery after an interrupted import.
-        store.process_cycles(CycleDetectionSettings.simulation_defaults())
+        store.process_cycles(
+            CycleDetectionSettings.simulation_defaults(), observed_at=datetime.now(UTC)
+        )
         assert next_cursor is not None
         store.save_cloud_sync_cursor(config.url, *next_cursor)
     return accepted
