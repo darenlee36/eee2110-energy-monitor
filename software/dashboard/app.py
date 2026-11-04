@@ -275,7 +275,7 @@ source_filter = source_options[st.selectbox(
     key="data_source_filter",
 )]
 # Local report/manual tools stay available for offline development.
-can_edit = not use_supabase
+can_edit = source_mode in ("local", "demo")
 
 controls = st.columns([2, 2, 1])
 with controls[0]:
@@ -354,7 +354,9 @@ elif st.session_state.mode == "Cycles":
                 )
         else:
             st.info(detail.chart_summary)
-        if detail.summary.status is CycleStatus.COMPLETED:
+        if detail.summary.status is CycleStatus.COMPLETED and (
+            can_edit or isinstance(store, SupabaseCycleStore)
+        ):
             render_cycle_annotation(store, detail.summary.cycle_id)
         render_tariff_disclosure(
             detail.tariff_estimate,

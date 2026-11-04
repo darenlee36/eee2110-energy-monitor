@@ -54,6 +54,13 @@ def test_public_cloud_has_annotation_without_admin_controls(tmp_path, monkeypatc
     assert not any(e.label in ("Owner controls", "Add manual cycle") for e in app.expander)
     assert not any(i.label == "Owner password" for i in app.text_input)
 
+    monkeypatch.delenv("SUPABASE_SECRET_KEY")
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    app.run()
+    assert not app.exception
+    assert not any(e.label == "Cycle annotation" for e in app.expander)
+    assert any("server credentials are missing" in w.value for w in app.warning)
+
 
 def build_dashboard_cycle_database(tmp_path: Path) -> Path:
     database = tmp_path / "dashboard-cycle.db"
@@ -672,7 +679,7 @@ def test_stale_live_display_labels_last_known_values(tmp_path, monkeypatch):
     assert not app.exception
     assert any("Offline" in m.value for m in app.markdown)
     assert "Last recorded power" in [m.label for m in app.metric]
-    assert not any("Active load detected" in m.value for m in app.markdown)
+    assert not any("Monitoring Load" in m.value for m in app.markdown)
 
 
 def test_cycle_receipt_uses_myt_across_midnight(tmp_path, monkeypatch):
