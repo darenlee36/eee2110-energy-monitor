@@ -9,6 +9,7 @@ from uuid import UUID
 import httpx
 import pytest
 
+from dashboard.components import build_electrical_figure, build_report_trace, live_status
 from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.dashboard_queries import get_live_view
 from energy_monitor.reporting import generate_missing_reports
@@ -64,6 +65,10 @@ def test_real_batch_replay_and_numerical_report(tmp_path, monkeypatch):
                 63000006: "idle", 63000012: "heating",
                 63000030: "finalizing", 63000036: "cycle_complete",
             }[page[-1]["sample_sequence"]]
+            assert live_status(view)[0] == {
+                "idle": "Ready", "heating": "Monitoring Load",
+                "finalizing": "Finalizing", "cycle_complete": "Cycle Complete",
+            }[view.state]
         if view.state == "cycle_complete" and page[-1]["sample_sequence"] == 63000036:
             first_confirmation = observed
             assert view.last_cycle.ended_at.isoformat() == "2026-11-04T08:09:19+00:00"
@@ -78,7 +83,12 @@ def test_real_batch_replay_and_numerical_report(tmp_path, monkeypatch):
     assert cycle["completion_seen_at"] == first_confirmation.isoformat()
     assert cycle["meter_energy_kwh"] == pytest.approx(0.047)
     assert cycle["integrated_energy_kwh"] == pytest.approx(0.04414764)
-    assert get_live_view(store, observed + timedelta(seconds=121)).state == "unconfirmed"
+    stale = get_live_view(store, observed + timedelta(seconds=121))
+    assert stale.state == "unconfirmed"
+    assert live_status(stale)[0] == "Offline"
+    for metric, field in (("Voltage", "voltage_v"), ("Current", "current_a")):
+        figure = build_electrical_figure(stale.recent_readings, metric, elapsed=False)
+        assert list(figure.data[0].y) == [getattr(r, field) for r in stale.recent_readings]
 
     reports = {}
 
@@ -113,3 +123,11 @@ def test_real_batch_replay_and_numerical_report(tmp_path, monkeypatch):
     report = next(iter(reports.values()))
     assert store.save_report(report) == report["report_id"]
     assert len(reports) == 1
+    evidence = report["evidence_snapshot"]["cycles"][0]
+    expected = rows[10:29]
+    for metric, field in (("Power", "active_power_w"), ("Voltage", "voltage_v"),
+                          ("Current", "current_a")):
+        figure = build_report_trace(evidence, metric)
+        assert list(figure.data[0].y) == [row[field] for row in expected]
+    energy = build_report_trace(evidence, "Energy")
+    assert energy.data[0].y[-1] == pytest.approx(0.047)

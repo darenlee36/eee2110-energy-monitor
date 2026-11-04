@@ -18,7 +18,6 @@ from energy_monitor.models import (
     TelemetryReading,
 )
 from energy_monitor.report_narrative import FAILURE_MESSAGES, narrative_sections
-from energy_monitor.reporting import report_insights
 from energy_monitor.storage import SQLiteTelemetryStore
 
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
@@ -48,55 +47,55 @@ def _report_source(cycle: dict) -> str:
     return "manual" if cycle["record_source"] == "manual" else cycle["data_origin"]
 
 
-def build_report_traces(cycle: dict) -> list[go.Figure]:
-    """Plot saved evidence only; gaps and invalid samples never become zeroes."""
+REPORT_MEASUREMENTS = {
+    "Power": ("active_power_w", "W", "#3BD7FF"),
+    "Voltage": ("voltage_v", "V", "#FFC46B"),
+    "Current": ("current_a", "A", "#E22DFF"),
+    "Energy": ("cumulative_energy_kwh", "kWh", "#72F6C7"),
+}
+
+
+def build_report_trace(cycle: dict, measurement: str) -> go.Figure | None:
+    """Plot one measurement from the saved snapshot, preserving invalid samples and gaps."""
     readings = cycle.get("readings", [])
     valid = [r for r in readings if r["quality_status"] == "valid"]
     if not valid:
-        return []
+        return None
+    field, unit, color = REPORT_MEASUREMENTS[measurement]
     start = datetime.fromisoformat(cycle["started_at"])
     baseline = valid[0]["cumulative_energy_kwh"]
     span = max(0, valid[-1]["cumulative_energy_kwh"] - baseline)
     first_increment = max(0, cycle["meter_energy_kwh"] - span)
-    counter_reset = any(
-        b["cumulative_energy_kwh"] < a["cumulative_energy_kwh"]
-        for a, b in zip(valid, valid[1:], strict=False)
-    )
-    elapsed, power, current, energy = [], [], [], []
+    if measurement == "Energy" and any(
+        b[field] < a[field] for a, b in zip(valid, valid[1:], strict=False)
+    ):
+        return None
+    elapsed, values = [], []
     previous_time = None
     for reading in readings:
         timestamp = datetime.fromisoformat(reading["timestamp"])
-        if previous_time is not None and (timestamp - previous_time).total_seconds() > 15:
-            for values in (elapsed, power, current, energy):
-                values.append(None)
-        good = reading["quality_status"] == "valid"
+        if previous_time is not None and (timestamp - previous_time).total_seconds() > 7.5:
+            elapsed.append(None)
+            values.append(None)
         elapsed.append((timestamp - start).total_seconds())
-        power.append(reading["active_power_w"] if good else None)
-        current.append(reading["current_a"] if good else None)
-        energy.append(
-            first_increment + max(0, reading["cumulative_energy_kwh"] - baseline)
-            if good and not counter_reset else None
-        )
+        value = reading[field] if reading["quality_status"] == "valid" else None
+        if value is not None and measurement == "Energy":
+            value = first_increment + max(0, value - baseline)
+        values.append(value)
         previous_time = timestamp
-    figures = []
-    for title, unit, values, color in (
-        ("Power throughout the cycle", "Power (W)", power, "#3BD7FF"),
-        ("Current throughout the cycle", "Current (A)", current, "#E22DFF"),
-        ("Energy accumulated", "Energy (kWh)", energy, "#72F6C7"),
-    ):
-        figure = go.Figure(go.Scatter(
-            x=elapsed, y=values, mode="lines+markers", connectgaps=False,
-            line={"color": color, "width": 3}, marker={"size": 4},
-            name=unit, hovertemplate="%{x:.0f} s<br>%{y:.5g} " + unit + "<extra></extra>",
-        ))
-        figure.update_layout(
-            **_transparent_chart_layout(285), title={"text": title, "x": 0.02},
-            xaxis={"title": "Elapsed (s)", "automargin": True},
-            yaxis={"title": unit, "rangemode": "tozero", "automargin": True},
-            showlegend=False,
-        )
-        figures.append(figure)
-    return figures
+    figure = go.Figure(go.Scatter(
+        x=elapsed, y=values, mode="lines+markers", connectgaps=False,
+        line={"color": color, "width": 3}, marker={"size": 4}, name=measurement,
+        hovertemplate="%{x:.0f} s<br>%{y:.5g} " + unit + "<extra></extra>",
+    ))
+    figure.update_layout(
+        **_transparent_chart_layout(285),
+        title={"text": f"{measurement} throughout the cycle", "x": 0.02},
+        xaxis={"title": "Elapsed (s)", "automargin": True},
+        yaxis={"title": f"{measurement} ({unit})", "automargin": True},
+        showlegend=False,
+    )
+    return figure
 
 
 def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
@@ -132,7 +131,8 @@ def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
 def render_anomaly_assessment(report: dict) -> None:
     """Render saved evidence only; no fitting, inference or provider calls."""
     model = report["evidence_snapshot"]["model"]
-    predictions = model.get("predictions", [])
+    predictions = model.get("predictions", []) if model.get("status") == "trained" else []
+    evaluated = any(p.get("anomaly_score") is not None for p in predictions)
     if len(predictions) == 1 and predictions[0]["anomaly_score"] is not None:
         prediction = predictions[0]
         st.metric("Anomaly score", f"{prediction['anomaly_score']:.1f} / 100")
@@ -157,7 +157,6 @@ def render_anomaly_assessment(report: dict) -> None:
     else:
         st.metric("Anomaly score", "Unavailable")
     messages = {
-        "not_trained": "The model is not trained. No appliance-health score has been calculated.",
         "insufficient_data": "Not enough reviewed normal sensor cycles to train a baseline.",
         "test_only_model": "A test-only model cannot assess real appliance behaviour.",
         "quality_excluded": "This cycle has unsuitable data or unverified/simulated origin.",
@@ -165,8 +164,8 @@ def render_anomaly_assessment(report: dict) -> None:
                           "and recorded operating conditions.",
         "training_cycle": "This cycle was used in training; it is not an independent evaluation.",
     }
-    if not predictions:
-        st.caption(messages["not_trained"])
+    if not evaluated:
+        st.caption("Classification: Not Evaluated")
     reasons = {messages[p["status"]] for p in predictions if p["status"] in messages}
     for message in sorted(reasons):
         st.caption(message)
@@ -174,7 +173,7 @@ def render_anomaly_assessment(report: dict) -> None:
         st.warning("Configured model unavailable; the numerical report is retained.")
     training = model.get("status", "not_trained").replace("_", " ")
     version = model.get("model_version") or "Unavailable"
-    st.caption(f"Training status: {training} · Model: {version}")
+    st.caption(f"Training status: {training} · Model version: {version}")
     sources = sorted(report["evidence_snapshot"]["source_counts"])
     st.caption("Data provenance: " + ", ".join(sources))
 
@@ -226,17 +225,15 @@ def render_report_dashboard(report: dict) -> None:
             st.warning("Collection context is unavailable, mismatched or awaiting review. "
                        "Numerical readings are retained; model scoring is blocked.")
     st.subheader(f"Cycle {selected + 1} performance")
-    st.caption(
-        REPORT_SOURCES[_report_source(cycle)][0]
-        + " · Sensor origin is not calibration evidence."
-    )
+    if _report_source(cycle) != "sensor":
+        st.caption(REPORT_SOURCES[_report_source(cycle)][0])
     cells = st.columns(3)
     seconds = cycle["duration_seconds"]
     cells[0].metric("Cycle duration", f"{seconds // 60}m {seconds % 60:02d}s")
     cells[1].metric("Energy used", f"{cycle['meter_energy_kwh']:.5f} kWh")
-    cells[2].metric("Estimated cycle cost", _charge_value(
-        TariffEstimate.model_validate(cycle["tariff_estimate"])
-    ))
+    estimate = TariffEstimate.model_validate(cycle["tariff_estimate"])
+    cells[2].metric("Estimated cycle cost", _charge_value(estimate))
+    cells[2].caption("Qualified estimate · see tariff details")
     manual = cycle["record_source"] == "manual"
     valid = [r for r in cycle.get("readings", []) if r["quality_status"] == "valid"]
     frequency = fmean(r["frequency_hz"] for r in valid) if valid and not manual else None
@@ -254,27 +251,23 @@ def render_report_dashboard(report: dict) -> None:
             cell.metric(
                 label, "Unavailable" if value is None else f"{value:{precision}} {unit}".strip()
             )
-    st.caption(
-        "Electrical averages use valid samples; cost is a partial estimate, not a household bill."
-    )
-    st.text(cycle["quality_note"])
     if not cycle["eligible_for_totals"]:
         st.warning(
             "This cycle's recorded values are shown, but excluded from report energy/cost totals."
         )
     st.subheader("Recorded readings")
-    figures = build_report_traces(cycle) if not manual else []
-    if figures:
-        for index, figure in enumerate(figures):
-            render_resettable_chart(
-                figure, chart_key=f"report_trace_{report['report_id']}_{selected}_{index}"
-            )
-        if not any(v is not None for v in figures[2].data[0].y):
-            st.warning("Energy trace unavailable: the saved meter counter moves backwards.")
-        st.caption(
-            "Blank sections mark invalid samples or gaps longer than 15 seconds. "
-            "Energy includes the cycle's recorded starting increment; gaps are not interpolated."
+    if cycle.get("readings") and not manual:
+        measurement = st.selectbox(
+            "Measurement", list(REPORT_MEASUREMENTS),
+            key=f"report_measurement_{report['report_id']}_{selected}",
         )
+        figure = build_report_trace(cycle, measurement)
+        if figure is not None:
+            render_resettable_chart(
+                figure, chart_key=f"report_trace_{report['report_id']}_{selected}_{measurement}"
+            )
+        else:
+            st.warning(f"{measurement} trace unavailable: check saved reading quality or resets.")
         with st.expander("Reading values"):
             frame = pd.DataFrame(cycle["readings"])
             frame["timestamp"] = frame["timestamp"].map(format_myt)
@@ -291,13 +284,22 @@ def render_report_dashboard(report: dict) -> None:
             "Older/manual reports retain their recorded summary only."
         )
     st.subheader("Insights & next steps")
-    st.caption("Rule-based guidance from saved evidence—not an AI diagnosis or model score.")
+    if report["engine"] == "codex" and report["status"] == "generated":
+        st.info("DISCLAIMER · This saved report includes constrained AI-assisted interpretation. "
+                "The readings and tariff evidence remain the basis for review.")
+    elif report["engine"] == "codex":
+        st.info("DISCLAIMER · The saved AI-assisted review was unavailable. "
+                "The numerical evidence is shown with rule-based guidance.")
+    else:
+        st.info("DISCLAIMER · Rule-based observations from saved evidence. "
+                "Appliance condition and physical causes require separate verification.")
     headings = {"observations": "What the readings show", "possibilities": "Possible explanations",
                 "actions": "What to try next"}
-    for section, messages in report_insights(evidence).items():
-        st.markdown(f"**{headings[section]}**")
-        for message in messages:
-            st.write(message)
+    for section, messages in cycle_presentation_insights(cycle).items():
+        with st.container(border=True):
+            st.markdown(f"#### {headings[section]}")
+            for message in messages:
+                st.write(message)
     if report["engine"] == "codex":
         st.subheader("AI-assisted review")
         st.caption(
@@ -313,14 +315,45 @@ def render_report_dashboard(report: dict) -> None:
                     st.write(message)
         else:
             st.warning(FAILURE_MESSAGES[evidence["codex_review"]["failure"]])
-    with st.expander("Cost and data limitations"):
-        st.write("Household usage and applicable tariff adjustments may be unresolved. "
-                 "Taxes, incentives, fixed charges and other bill components may be excluded.")
-        st.write(
-            "No physical fault or proven efficiency is inferred from a baseline anomaly score."
-            if evidence["model"].get("predictions") else
-            "The anomaly model is not trained; no physical fault or proven efficiency is inferred."
+    render_tariff_disclosure(estimate, "Cycle energy")
+
+
+def cycle_presentation_insights(cycle: dict) -> dict[str, list[str]]:
+    """Derive display guidance without changing canonical report text or hashes."""
+    duration = cycle["duration_seconds"]
+    energy = cycle["meter_energy_kwh"]
+    if cycle["record_source"] == "manual":
+        return {
+            "observations": [f"The manual entry records {duration:g} s and {energy:.5f} kWh."],
+            "possibilities": ["A manual record has no saved sensor trace to explain variation."],
+            "actions": ["Keep the reference meter reading with the manual entry."],
+        }
+    valid = cycle.get("valid_sample_count", 0)
+    invalid = cycle.get("invalid_sample_count", 0)
+    missing = cycle.get("missing_sample_count", 0)
+    ratio = cycle.get("energy_difference_ratio", 0)
+    observations = [
+        f"Recorded duration was {duration:g} s, with {energy:.5f} kWh on the cycle meter.",
+        f"Recorded average power was {cycle['average_power_w']:,.0f} W "
+        f"and peak power was {cycle['peak_power_w']:,.0f} W.",
+    ]
+    if invalid or missing or cycle.get("gap_count"):
+        observations.append(
+            f"{valid} valid readings, {invalid} invalid, {missing} estimated missing."
         )
+        possibilities = ["A gap in the recorded stream limits comparison across the interval."]
+        actions = ["Review chart gaps and check connectivity during those intervals."]
+    elif cycle["assessment"] == "unusual":
+        observations.append(f"The meter and integrated energy estimates differ by {ratio:.1%}.")
+        possibilities = ["A counter change or missed interval could affect the energy cross-check."]
+        actions = ["Compare the saved meter counter with the power trace."]
+    else:
+        possibilities = ["Water volume and starting conditions can change duration and energy."]
+        actions = ["Compare with a completed cycle under the same recorded operating conditions."]
+    source = _report_source(cycle)
+    if source != "sensor":
+        observations.append(f"Source: {REPORT_SOURCES[source][0]}.")
+    return {"observations": observations, "possibilities": possibilities, "actions": actions}
 
 
 def _transparent_chart_layout(height: int) -> dict[str, object]:
@@ -511,7 +544,7 @@ def build_electrical_figure(
     y = [getattr(r, field) if r.quality_status.value == "valid" else None for r in readings]
     # Insert gaps between separated samples so the chart never implies a measurement in between.
     for index in range(len(times) - 1, 0, -1):
-        if (times[index] - times[index - 1]).total_seconds() > 5:
+        if (times[index] - times[index - 1]).total_seconds() > 7.5:
             x.insert(index, x[index])
             y.insert(index, None)
     time_hover = "%{x:g} s" if elapsed else "%{x|%H:%M:%S} MYT"
@@ -541,10 +574,10 @@ def add_cycle_comparison(
                 or row.get("record_source") != "measured"
                 or row.get("data_origin") != latest.data_origin):
             continue
-        description = row.get("custom_label") or row.get("effective_volume")
         label = format_myt(str(row["started_at"]))
-        if description and description != "unknown":
-            label += f" · {description}"
+        for description in dict.fromkeys((row.get("effective_volume"), row.get("custom_label"))):
+            if description and description != "unknown":
+                label += f" · {description}"
         candidates[row["cycle_id"]] = label
     if not candidates:
         return
@@ -616,7 +649,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
             )
         )
         figure.add_hline(
-            y=start_threshold_w,
+            y=start_threshold_w, name="Start threshold", showlegend=True,
             line={"color": "#E22DFF", "width": 2, "dash": "dash"},
         )
         cycle = view.active_cycle or view.last_cycle
@@ -629,6 +662,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
                     x0=malaysia_time(max(cycle.started_at, chart_start)),
                     x1=malaysia_time(min(cycle_end, chart_end)),
                     fillcolor="rgba(255, 116, 72, 0.10)",
+                    name="Detected cycle", showlegend=True,
                     line_width=0,
                     layer="below",
                 )
@@ -663,7 +697,8 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
             "rangemode": "tozero",
             "automargin": True,
         },
-        showlegend=False,
+        showlegend=True,
+        legend={"orientation": "h", "y": -0.35},
     )
     return figure
 
@@ -752,7 +787,7 @@ def cycle_energy_points(
         for reading in readings
     ]
     for index in range(len(readings) - 1, 0, -1):
-        if elapsed[index] - elapsed[index - 1] > 5:
+        if elapsed[index] - elapsed[index - 1] > 7.5:
             elapsed.insert(index, elapsed[index])
             energy.insert(index, None)
     return elapsed, energy
@@ -946,7 +981,8 @@ def render_cycle_receipt(detail: CycleDetail) -> None:
     metrics = st.columns(3)
     metrics[0].metric("Cycle duration", f"{summary.duration_seconds} s")
     metrics[1].metric(detail.energy_label, f"{summary.meter_energy_kwh:.5f} kWh")
-    st.caption(f"Data origin: {summary.data_origin}. Sensor mode is not calibration evidence.")
+    if summary.data_origin != "sensor" and detail.record_source != "manual":
+        st.caption(REPORT_SOURCES[summary.data_origin][0])
     metrics[2].metric("Estimated gross cycle charge", _charge_value(detail.tariff_estimate))
     secondary = st.columns(3)
     if detail.record_source == "manual":
@@ -956,8 +992,8 @@ def render_cycle_receipt(detail: CycleDetail) -> None:
         secondary[0].metric("Average power", f"{summary.average_power_w:,.0f} W")
         secondary[1].metric("Peak power", f"{summary.peak_power_w:,.0f} W")
     secondary[2].metric("Cycle label", detail.cycle_label or "Unlabelled")
-    st.caption(detail.comparison_text)
-    st.caption(summary.quality_note)
+    if summary.status.value != "completed" or summary.assessment.value != "normal":
+        st.caption(summary.quality_note)
     if detail.manual_notes:
         st.caption(f"Manual notes: {detail.manual_notes}")
 
@@ -1050,7 +1086,8 @@ def build_cycle_figure(detail: CycleDetail, start_threshold_w: float) -> go.Figu
             "rangemode": "tozero",
             "automargin": True,
         },
-        showlegend=False,
+        showlegend=True,
+        legend={"orientation": "h", "y": -0.24},
     )
     return figure
 

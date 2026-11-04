@@ -94,9 +94,9 @@ def test_demo_source_seeds_simulated_dashboard_data(
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
 
     assert not app.exception
-    assert any("demonstration mode" in caption.value for caption in app.caption)
+    assert any("Demonstration data" in caption.value for caption in app.caption)
     assert any(metric.label == "Active power now" for metric in app.metric)
-    assert len(app.get("plotly_chart")) == 3
+    assert len(app.get("plotly_chart")) == 5
     assert app.session_state["auto_refresh"] is False
 
 
@@ -113,7 +113,7 @@ def test_completed_cycle_renders_one_cycle_receipt(
     labels = [metric.label for metric in app.metric]
     assert "Simulated cycle energy" in labels
     assert "Estimated gross cycle charge" in labels
-    assert sum(button.label == "Reset view" for button in app.button) == 3
+    assert sum(button.label == "Reset view" for button in app.button) == 5
     assert "Last recorded frequency" in labels
     assert "Last recorded power factor" in labels
     assert all("Development tariff rate" not in item.label for item in app.number_input)
@@ -168,7 +168,7 @@ def test_cycles_mode_defaults_to_latest_completed_cycle(
     assert table.iloc[0]["Duration"] == "2m 25s"
     assert table.iloc[0]["Energy"] == "0.0854 kWh"
     assert "Simulated cycle energy" in [metric.label for metric in app.metric]
-    assert any(button.label == "Add label" for button in app.button)
+    assert any(button.label == "Save annotation" for button in app.button)
     assert any(button.label == "Add manual record" for button in app.button)
     assert any(button.key == "cycle_detail_chart_reset_button" for button in app.button)
     assert any("Times use Malaysia time" in caption.value for caption in app.caption)
@@ -230,7 +230,7 @@ def test_cycle_figure_uses_elapsed_seconds_threshold_and_quality_markers(
     assert figure.layout.xaxis.title.text == "Elapsed (s)"
     assert figure.layout.yaxis.title.text == "Power (W)"
     assert figure.layout.hovermode == "x unified"
-    assert figure.layout.showlegend is False
+    assert figure.layout.showlegend is True
     assert any(trace.name == "Detection threshold" for trace in figure.data)
     assert any(trace.name == "Invalid/missing sample" for trace in figure.data)
 
@@ -248,7 +248,7 @@ def test_live_figures_show_recent_power_threshold_and_measured_cycle_energy(
     assert power_figure.layout.yaxis.title.text == "Power (W)"
     assert power_figure.layout.xaxis.title.text == "Malaysia time (MYT)"
     assert power_figure.layout.title.text == "Live power · last 5 min"
-    assert power_figure.layout.showlegend is False
+    assert power_figure.layout.showlegend is True
     assert not power_figure.layout.annotations
     assert any(trace.name == "Active power" for trace in power_figure.data)
     assert any(trace.name == "Current reading" for trace in power_figure.data)
@@ -376,7 +376,7 @@ def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypat
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
     assert any("Source: simulated" in c.value for c in app.caption)
     assert any("Engine: template" in c.value for c in app.caption)
-    assert any("not trained" in m.value for m in app.markdown)
+    assert any("Not Evaluated" in c.value for c in app.caption)
     assert app.json
     next(b for b in app.button if b.label == "Generate cycle report").click().run()
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
@@ -418,7 +418,8 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     assert any("Engine: template" in c.value for c in app.caption)
     assert not any(b.label.startswith("Generate") for b in app.button)
     assert app.json
-    assert any(cycle["quality_note"] in text.value for text in app.text)
+    saved = store.fetch_reports()[0]
+    assert any(saved["report_text"] == text.value for text in app.text)
 
 
 def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch):
@@ -472,8 +473,8 @@ def test_visual_reports_render_saved_metrics_and_traces_without_cache(tmp_path, 
     assert values["Average frequency"] == "50.00 Hz"
     assert values["Average current"].endswith(" A")
     assert values["Anomaly score"] == "Unavailable"
-    assert len(app.get("plotly_chart")) == 3
-    assert sum(b.label == "Reset view" for b in app.button) == 3
+    assert len(app.get("plotly_chart")) == 1
+    assert sum(b.label == "Reset view" for b in app.button) == 1
     assert any(h.value == "Insights & next steps" for h in app.subheader)
     assert app.json
 
@@ -510,18 +511,24 @@ def test_visual_report_missing_traces_are_not_invented(tmp_path, monkeypatch, so
 
 
 def test_report_traces_preserve_units_and_do_not_bridge_bad_samples():
-    from dashboard.components import build_report_traces
+    from dashboard.components import build_report_trace
 
     cycle = {"started_at": "2026-10-01T00:00:00+00:00", "meter_energy_kwh": 0.012,
              "readings": [
         {"timestamp": "2026-10-01T00:00:00+00:00", "active_power_w": 100,
-         "current_a": 0.5, "cumulative_energy_kwh": 1, "quality_status": "valid"},
+         "voltage_v": 220.1, "current_a": 0.5, "cumulative_energy_kwh": 1,
+         "quality_status": "valid"},
         {"timestamp": "2026-10-01T00:00:05+00:00", "active_power_w": 200,
          "current_a": 1, "cumulative_energy_kwh": 1.005, "quality_status": "read_error"},
         {"timestamp": "2026-10-01T00:00:25+00:00", "active_power_w": 100,
-         "current_a": 0.5, "cumulative_energy_kwh": 1.01, "quality_status": "valid"},
+         "voltage_v": 221.3, "current_a": 0.5, "cumulative_energy_kwh": 1.01,
+         "quality_status": "valid"},
     ]}
-    power, current, energy = build_report_traces(cycle)
+    power = build_report_trace(cycle, "Power")
+    voltage = build_report_trace(cycle, "Voltage")
+    current = build_report_trace(cycle, "Current")
+    energy = build_report_trace(cycle, "Energy")
+    assert list(voltage.data[0].y) == [220.1, None, None, 221.3]
     assert list(power.data[0].x) == [0, 5, None, 25]
     assert list(power.data[0].y) == [100, None, None, 100]
     assert current.layout.yaxis.title.text == "Current (A)"
@@ -529,7 +536,7 @@ def test_report_traces_preserve_units_and_do_not_bridge_bad_samples():
     assert energy.data[0].y[0] == pytest.approx(0.002)
     assert energy.data[0].y[-1] == pytest.approx(0.012)
     assert power.data[0].connectgaps is False
-    assert build_report_traces({"readings": []}) == []
+    assert build_report_trace({"readings": []}, "Power") is None
 
 
 def test_report_comparison_separates_sources_and_omits_excluded_energy():
@@ -551,7 +558,7 @@ def test_report_comparison_separates_sources_and_omits_excluded_energy():
 
 
 def test_report_energy_trace_does_not_hide_a_meter_counter_reset():
-    from dashboard.components import build_report_traces
+    from dashboard.components import build_report_trace
 
     cycle = {"started_at": "2026-10-01T00:00:00+00:00", "meter_energy_kwh": 0.01,
              "readings": [
@@ -560,9 +567,10 @@ def test_report_energy_trace_does_not_hide_a_meter_counter_reset():
         {"timestamp": "2026-10-01T00:00:05+00:00", "active_power_w": 100,
          "current_a": 0.5, "cumulative_energy_kwh": 0, "quality_status": "valid"},
     ]}
-    power, _, energy = build_report_traces(cycle)
+    power = build_report_trace(cycle, "Power")
+    energy = build_report_trace(cycle, "Energy")
     assert list(power.data[0].y) == [100, 100]
-    assert list(energy.data[0].y) == [None, None]
+    assert energy is None
 
 
 @pytest.mark.parametrize("count", [5, 10, 20])
@@ -595,7 +603,7 @@ def test_visual_batch_reports_allow_exact_count_and_cycle_selection(tmp_path, mo
     assert any(h.value == f"{count}-cycle overview" for h in app.subheader)
     total_cost = next(m.value for m in app.metric if m.label == "Estimated report cost")
     assert all(len(part.rsplit(".", 1)[-1]) == 3 for part in total_cost.split("–"))
-    assert len(app.get("plotly_chart")) == 5
+    assert len(app.get("plotly_chart")) == 3
     picker = next(s for s in app.selectbox if s.label == "Cycle readings")
     assert len(picker.options) == count
     picker.set_value(count - 1).run()
@@ -629,9 +637,9 @@ def test_saved_ai_review_displays_without_invoking_codex(tmp_path, monkeypatch, 
     assert not app.exception
     assert any(h.value == "AI-assisted review" for h in app.subheader)
     assert any("Codex-selected" in c.value for c in app.caption)
-    assert any("generation runs separately" in c.value for c in app.caption)
+    assert any("DISCLAIMER" in i.value for i in app.info)
     assert not any("no reporting schedule enabled" in c.value for c in app.caption)
-    assert len(app.get("plotly_chart")) == 3
+    assert len(app.get("plotly_chart")) == 1
     assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
     if failure:
         assert any("timed out" in w.value for w in app.warning)
@@ -762,3 +770,35 @@ def test_source_filtered_batch_does_not_silently_include_simulated_cycles(tmp_pa
     assert not app.exception
     assert any("includes other data sources" in e.value for e in app.error)
     assert store.fetch_reports() == []
+
+
+def test_live_comparison_uses_elapsed_recorded_cycles_and_metadata(tmp_path, monkeypatch):
+    from dashboard.components import add_cycle_comparison
+
+    store = SQLiteTelemetryStore(build_dashboard_cycle_database(tmp_path))
+    first = store.fetch_cycles()[0]
+    store.add_cycle_label("Warm start")
+    store.save_cycle_label(first["cycle_id"], "Warm start")
+    readings = generate_cycle_scenario("normal", datetime(2026, 9, 12, 6, 10, tzinfo=UTC))
+    readings = [r.model_copy(update={
+        "sample_sequence": r.sample_sequence + 1000,
+        "cumulative_energy_kwh": r.cumulative_energy_kwh + 1,
+    }) for r in readings]
+    for batch in batch_readings(readings):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    view = get_live_view(store, datetime(2026, 9, 12, 6, 20, tzinfo=UTC))
+    figure = build_cycle_energy_figure(view)
+
+    def select(label, options, *, format_func, **kwargs):
+        assert label == "Compare completed cycles"
+        assert options == [first["cycle_id"]]
+        assert "Warm start" in format_func(options[0])
+        return options
+
+    monkeypatch.setattr("dashboard.components.st.multiselect", select)
+    add_cycle_comparison(figure, view, store)
+    assert len(figure.data) == 2
+    assert figure.data[1].x[0] == 0
+    assert figure.data[1].x[-1] == first["duration_seconds"]
+    assert figure.data[1].y[-1] == pytest.approx(first["meter_energy_kwh"])

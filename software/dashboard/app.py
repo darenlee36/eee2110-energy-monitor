@@ -152,7 +152,6 @@ def sync_cloud_source() -> None:
 
 def render_reports() -> None:
     st.header("Reports")
-    st.caption("Saved cycle evidence · viewing never runs AI · generation runs separately")
 
     def history(profile=None, device=None):
         try:
@@ -176,9 +175,6 @@ def render_reports() -> None:
                          c.get("data_origin", "unknown"), c.get("record_source", "measured"),
                          source_filter)]
         pairs = sorted({(r["profile_id"], r["device_id"]) for r in [*recent, *completed]})
-        st.caption(
-            "History: latest 100 reports per selected device/profile. Times use Malaysia time."
-        )
         if not pairs:
             st.info(
                 "No saved reports or completed cycles yet. "
@@ -195,9 +191,6 @@ def render_reports() -> None:
         selected_report = None
         if can_edit and cycles:
             with st.expander("Generate template report", expanded=True):
-                st.caption(
-                    "Generate explicitly. Refreshing or opening Reports never generates reports."
-                )
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
                     "Completed cycle", list(cycle_by_id), format_func=lambda cid:
@@ -249,10 +242,6 @@ def render_reports() -> None:
             ))
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
-        st.caption(
-            "AI-assisted selection · numerical template retained" if report["engine"] == "codex"
-            else "Generated summary · not AI-generated"
-        )
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
                    f"{format_myt(report['period_end'])}")
         render_report_dashboard(report)
@@ -374,8 +363,3 @@ elif st.session_state.mode == "Cycles":
 else:
     sync_cloud_source()
     render_reports()
-
-st.caption(
-    "Unusual behaviour means different from the recorded baseline; "
-    "it does not confirm a physical fault."
-)
