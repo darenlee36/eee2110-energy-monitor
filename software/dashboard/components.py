@@ -610,6 +610,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
     readings = view.recent_readings
     timestamps = [malaysia_time(reading.timestamp) for reading in readings]
     power = [reading.active_power_w for reading in readings]
+    peak_power = max(power, default=0.0)
     custom_hover = [
         [reading.voltage_v, reading.current_a, reading.quality_status.value]
         for reading in readings
@@ -649,10 +650,11 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
                 hovertemplate="Current %{y:,.1f} W<extra></extra>",
             )
         )
-        figure.add_hline(
-            y=start_threshold_w, name="Start threshold", showlegend=True,
-            line={"color": "#E22DFF", "width": 2, "dash": "dash"},
-        )
+        if peak_power >= start_threshold_w:
+            figure.add_hline(
+                y=start_threshold_w, name="Start threshold", showlegend=True,
+                line={"color": "#E22DFF", "width": 2, "dash": "dash"},
+            )
         cycle = view.active_cycle or view.last_cycle
         if cycle is not None:
             cycle_end = cycle.ended_at or readings[-1].timestamp
@@ -695,7 +697,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
         yaxis={
             "title": "Power (W)",
             "gridcolor": "rgba(184,196,255,0.12)",
-            "rangemode": "tozero",
+            "range": [0, max(5.0, peak_power * 1.1)],
             "automargin": True,
         },
         showlegend=True,

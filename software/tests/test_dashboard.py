@@ -280,6 +280,28 @@ def test_live_figures_show_recent_power_threshold_and_measured_cycle_energy(
     assert not quality_figure.layout.annotations
 
 
+@pytest.mark.parametrize(
+    ("powers", "upper_bound", "show_threshold"),
+    [
+        ([0, 0, 0], 5.0, False),
+        ([9.9, 11.1, 18.4], 20.24, False),
+        ([9.9, 11.1, 1792.0], 1971.2, True),
+    ],
+)
+def test_live_power_axis_follows_window(tmp_path, powers, upper_bound, show_threshold):
+    store = SQLiteTelemetryStore(build_dashboard_cycle_database(tmp_path))
+    view = get_live_view(store, now=datetime(2026, 9, 12, 6, 5, tzinfo=UTC))
+    readings = [
+        reading.model_copy(update={"active_power_w": power})
+        for reading, power in zip(view.recent_readings[-3:], powers, strict=True)
+    ]
+    figure = build_live_power_figure(view.model_copy(update={"recent_readings": readings}), 1000.0)
+
+    assert list(figure.data[0].y) == powers
+    assert list(figure.layout.yaxis.range) == pytest.approx([0, upper_bound])
+    assert any(shape.type == "line" for shape in figure.layout.shapes) is show_threshold
+
+
 def test_tariff_disclosure_names_provenance_and_exclusions() -> None:
     estimate = estimate_cycle_charge(
         Decimal("0.087"),
