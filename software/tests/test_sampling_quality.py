@@ -74,3 +74,33 @@ def test_charts_break_at_three_second_missing_slot_without_interpolating():
     report = {**cycle.model_dump(mode="json"),
               "readings": [r.model_dump(mode="json") for r in values]}
     assert None in build_report_trace(report, "Power").data[0].y
+
+
+@pytest.mark.parametrize("seconds,firmware,invalid", [
+    ([0, 3, 9], "pzem-fw-0.2.7", True),
+    ([0, 3, 9], "pzem-fw-0.2.7", False),
+    ([0, 3, 6], "pzem-fw-0.2.7", True),
+    ([0, 5, 10], "pzem-fw-0.2.5", True),
+])
+def test_live_power_gap_markers_do_not_misalign_quality_markers(
+    tmp_path, seconds, firmware, invalid,
+):
+    from dashboard.components import build_live_power_figure, malaysia_time
+    from energy_monitor.dashboard_queries import get_live_view
+    from energy_monitor.models import QualityStatus
+    from energy_monitor.storage import SQLiteTelemetryStore
+
+    values = [reading(i + 1, t, 10, 1).model_copy(update={"firmware_version": firmware})
+              for i, t in enumerate(seconds)]
+    if invalid:
+        values[-1].quality_status = QualityStatus.READ_ERROR
+    view = get_live_view(SQLiteTelemetryStore(tmp_path / "empty.db"), values[-1].timestamp)
+    view = view.model_copy(update={"recent_readings": values})
+    figure = build_live_power_figure(view, 1000)
+    assert (None in figure.data[0].y) is (seconds == [0, 3, 9])
+    assert figure.data[0].connectgaps is False
+    markers = [t for t in figure.data if t.name == "Invalid/missing sample"]
+    assert len(markers) == int(invalid)
+    if invalid:
+        assert list(markers[0].x) == [malaysia_time(values[-1].timestamp)]
+        assert list(markers[0].y) == [values[-1].active_power_w]

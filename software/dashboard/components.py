@@ -719,8 +719,8 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
                     layer="below",
                 )
     invalid = [
-        (timestamp, reading.active_power_w)
-        for timestamp, reading in zip(timestamps, readings, strict=True)
+        (malaysia_time(reading.timestamp), reading.active_power_w)
+        for reading in readings
         if reading.quality_status.value != "valid"
     ]
     if invalid:
