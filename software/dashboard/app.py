@@ -311,17 +311,19 @@ elif st.session_state.mode == "Cycles":
     manual_cycle_id = render_manual_cycle_entry(store) if can_edit else None
     if manual_cycle_id is not None:
         st.session_state.selected_cycle_id = str(manual_cycle_id)
-    status_filter, label_filter = render_cycle_filters(store)
+    status_filter, label_filter, date_time_options = render_cycle_filters(store, dashboard_now())
     label_value = {
         "All labels": "all",
         "Unlabelled": "__unlabelled__",
     }.get(label_filter, label_filter)
-    items = list_cycle_items(
-        store,
-        status_filter=status_filter.lower(),
-        label_filter=label_value,
-        source_filter=source_filter,
-    )
+    try:
+        items = list_cycle_items(
+            store, status_filter=status_filter.lower(), label_filter=label_value,
+            source_filter=source_filter, **date_time_options,
+        )
+    except ValueError as exc:
+        st.warning(str(exc))
+        items = []
     if st.session_state.selected_cycle_id not in {str(item.cycle_id) for item in items}:
         st.session_state.selected_cycle_id = None
     selected = render_cycle_history(items)

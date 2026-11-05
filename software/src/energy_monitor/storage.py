@@ -614,9 +614,9 @@ class SQLiteTelemetryStore:
         self,
         status: str | None = None,
         volume: str | None = None,
-        limit: int = 100,
+        limit: int | None = 100,
     ) -> list[dict[str, object]]:
-        if limit < 1 or limit > 10_000:
+        if limit is not None and (type(limit) is not int or limit < 1 or limit > 10_000):
             raise ValueError("limit must be between 1 and 10000")
         parameters: list[object] = []
         where = ""
@@ -638,7 +638,7 @@ class SQLiteTelemetryStore:
                 LEFT JOIN cycle_label_options AS label_options
                   ON label_options.id = custom_labels.label_option_id
                 {where}
-                ORDER BY cycles.started_at DESC
+                ORDER BY julianday(cycles.started_at) DESC, cycles.cycle_id DESC
                 """,  # noqa: S608 -- where is a fixed internal fragment
                 parameters,
             ).fetchall()

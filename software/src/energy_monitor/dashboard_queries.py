@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from statistics import median
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,7 +25,7 @@ from energy_monitor.models import (
     VolumeClass,
 )
 from energy_monitor.storage import SQLiteTelemetryStore
-from energy_monitor.tariffs import estimate_cycle_charge, load_tariff_catalog
+from energy_monitor.tariffs import TariffCatalog, estimate_cycle_charge, load_tariff_catalog
 
 CATALOG_PATH = (
     Path(__file__).parents[2] / "config" / "tariffs" / "tnb-domestic-general-rp4.json"
@@ -163,13 +164,14 @@ def _charge_text(estimate: TariffEstimate) -> str:
 def _cycle_item(
     row: dict[str, object],
     monthly_household_kwh: Decimal | None,
+    catalog: TariffCatalog | None = None,
 ) -> CycleListItem:
     summary = _summary_from_row(row)
     estimate = estimate_cycle_charge(
         Decimal(str(summary.meter_energy_kwh)),
         summary.started_at,
         monthly_household_kwh,
-        load_tariff_catalog(CATALOG_PATH),
+        catalog or load_tariff_catalog(CATALOG_PATH),
     )
     return CycleListItem(
         cycle_id=summary.cycle_id,
@@ -350,14 +352,56 @@ def get_live_view(
     )
 
 
+def cycle_start_matches(
+    started_at: str | datetime, *, date_filter: str = "All dates",
+    date_start: date | None = None, date_end: date | None = None,
+    time_start: time | None = None, time_end: time | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """MYT calendar dates inclusive; optional same-day time window [start, end)."""
+    zone = ZoneInfo("Asia/Kuala_Lumpur")
+    stamp = datetime.fromisoformat(started_at) if isinstance(started_at, str) else started_at
+    local = stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp
+    local = local.astimezone(zone)
+    clock = now or datetime.now(UTC)
+    today = (clock.replace(tzinfo=UTC) if clock.tzinfo is None else clock).astimezone(zone).date()
+    if date_filter == "All dates":
+        start = end = None
+    elif date_filter == "Today":
+        start = end = today
+    elif date_filter == "Yesterday":
+        start = end = today - timedelta(days=1)
+    elif date_filter == "Last 7 days":
+        start, end = today - timedelta(days=6), today
+    elif date_filter == "Custom date range":
+        start, end = date_start, date_end
+        if start is None or end is None or start > end:
+            raise ValueError("Start date must be on or before the end date.")
+    else:
+        raise ValueError("Unsupported date filter")
+    if (time_start is None) != (time_end is None):
+        raise ValueError("Both time boundaries are required.")
+    if time_start is not None and time_end <= time_start:
+        raise ValueError("End time must be after start time; overnight windows are not supported.")
+    return ((start is None or start <= local.date() <= end)
+            and (time_start is None or time_start <= local.time() < time_end))
+
+
 def list_cycle_items(
     store: SQLiteTelemetryStore,
     status_filter: str = "all",
     label_filter: str = "all",
-    limit: int = 100,
-    *, source_filter: str = "all",
+    limit: int | None = None,
+    *, source_filter: str = "all", date_filter: str = "All dates",
+    date_start: date | None = None, date_end: date | None = None,
+    time_start: time | None = None, time_end: time | None = None,
+    now: datetime | None = None,
 ) -> list[CycleListItem]:
-    rows = store.fetch_cycles(limit=10_000)
+    now = now or datetime.now(UTC)
+    options = dict(date_filter=date_filter, date_start=date_start, date_end=date_end,
+                   time_start=time_start, time_end=time_end, now=now)
+    cycle_start_matches(now, **options)  # Validate even when history is empty.
+    rows = store.fetch_cycles(limit=None)
     rows = [r for r in rows if matches_source(
         str(r.get("data_origin", "unknown")), str(r.get("record_source", "measured")),
         source_filter)]
@@ -373,8 +417,10 @@ def list_cycle_items(
         rows = [row for row in rows if row.get("custom_label") is None]
     elif label_filter != "all":
         rows = [row for row in rows if row.get("custom_label") == label_filter]
+    rows = [row for row in rows if cycle_start_matches(row["started_at"], **options)]
     monthly_usage = _monthly_usage_from_env()
-    return [_cycle_item(row, monthly_usage) for row in rows[:limit]]
+    catalog = load_tariff_catalog(CATALOG_PATH)
+    return [_cycle_item(row, monthly_usage, catalog) for row in rows[:limit]]
 
 
 def get_cycle_detail(

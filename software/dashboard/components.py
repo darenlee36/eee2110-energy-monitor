@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import hashlib
+from datetime import UTC, datetime, time
 from statistics import fmean
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -878,7 +879,37 @@ def build_cycle_energy_figure(view: LiveView) -> go.Figure | None:
     return figure
 
 
-def render_cycle_filters(store: SQLiteTelemetryStore) -> tuple[str, str]:
+def reset_cycle_filters() -> None:
+    st.session_state.update(
+        status_filter="All", label_filter="All labels", cycle_date_filter="All dates",
+        cycle_use_time=False, data_source_filter="All records",
+        cycle_time_start=time(13), cycle_time_end=time(15),
+    )
+
+
+def render_cycle_filters(store: SQLiteTelemetryStore, now: datetime) -> tuple[str, str, dict]:
+    with st.container(key="cycle-time-filters"):
+        dates, times = st.columns(2)
+        period = dates.selectbox("Recording date (MYT)", [
+            "All dates", "Today", "Yesterday", "Last 7 days", "Custom date range",
+        ], key="cycle_date_filter")
+        use_time = times.checkbox("Limit start time", key="cycle_use_time")
+        options = {"date_filter": period, "now": now}
+        if period == "Custom date range":
+            start, end = st.columns(2)
+            options["date_start"] = start.date_input(
+                "Start date (MYT)", value=malaysia_time(now).date(),
+                key="cycle_date_start", format="DD/MM/YYYY")
+            options["date_end"] = end.date_input(
+                "End date (MYT)", value=malaysia_time(now).date(),
+                key="cycle_date_end", format="DD/MM/YYYY")
+        if use_time:
+            start, end = st.columns(2)
+            options["time_start"] = start.time_input(
+                "From (MYT, inclusive)", value=time(13), step=60, key="cycle_time_start")
+            options["time_end"] = end.time_input(
+                "Until (MYT, exclusive)", value=time(15), step=60, key="cycle_time_end")
+            st.caption("Start included · end excluded · same-day windows only.")
     status = st.segmented_control(
         "Cycle status",
         ["All", "Normal", "Unusual", "Incomplete"],
@@ -890,7 +921,8 @@ def render_cycle_filters(store: SQLiteTelemetryStore) -> tuple[str, str]:
         label_options,
         key="label_filter",
     )
-    return str(status or "All"), str(label or "All labels")
+    st.button("Reset filters", key="reset_cycle_filters", on_click=reset_cycle_filters)
+    return str(status or "All"), str(label or "All labels"), options
 
 
 def render_manual_cycle_entry(store: SQLiteTelemetryStore) -> UUID | None:
@@ -965,6 +997,7 @@ def render_manual_cycle_entry(store: SQLiteTelemetryStore) -> UUID | None:
 
 
 def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
+    st.caption(f"{len(items):,} matching cycle(s) · newest first")
     if not items:
         st.info("No cycles match these filters.")
         return None
@@ -994,10 +1027,11 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
         hide_index=True,
         on_select="rerun",
         selection_mode="single-cell",
-        key="cycle_history",
+        key="cycle_history-" + hashlib.sha256(
+            ",".join(str(item.cycle_id) for item in items).encode()).hexdigest()[:16],
     )
     cells = event.selection.cells
-    return items[cells[0][0]].cycle_id if cells else None
+    return items[cells[0][0]].cycle_id if cells and cells[0][0] < len(items) else None
 
 
 def render_cycle_receipt(detail: CycleDetail) -> None:
