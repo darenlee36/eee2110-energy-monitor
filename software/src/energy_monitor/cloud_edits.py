@@ -7,7 +7,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import httpx
 
 from energy_monitor.models import CycleSummary, ManualCycleRecord
-from energy_monitor.reporting import ReportDraft, validate_report
+from energy_monitor.reporting import ReportDraft, build_report, validate_report
 from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.supabase_sync import SupabaseConfig, SupabaseSyncError
 
@@ -168,7 +168,7 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
         if cycle is None or cycle["status"] != "completed":
             raise ValueError("Only completed cycles can be annotated.")
         label, note = self._validated_annotation(label, note)
-        result = self._rpc("save_public_cycle_annotation", {
+        payload = {
             "p_cycle_id": cycle_id,
             "p_device_id": cycle["device_id"],
             "p_profile_id": cycle["profile_id"],
@@ -176,12 +176,41 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
             "p_label": label,
             "p_note": note,
             "p_expected_id": str(UUID(str(expected_id))) if expected_id is not None else None,
-        })
+        }
+        result = self._rpc("save_public_cycle_annotation", payload)
         status = result.get("status") if isinstance(result, dict) else None
+        if (status == "unavailable" and cycle["data_origin"] == "sensor"
+                and cycle["record_source"] == "measured"):
+            try:
+                response = httpx.get(
+                    f"{self.config.url}/rest/v1/appliance_cycles",
+                    headers={"apikey": self.config.service_role_key},
+                    params={"select": "cycle_id", "cycle_id": "eq." + cycle_id}, timeout=15,
+                )
+                response.raise_for_status()
+                cloud_cycles = response.json()
+                if not isinstance(cloud_cycles, list):
+                    raise ValueError("Invalid cloud cycle response")
+                if not cloud_cycles:
+                    # A freshly detected cycle may exist only in SQLite. The existing
+                    # server RPC validates its sensor boundaries and saves it atomically.
+                    report = build_report(self, profile_id=cycle["profile_id"],
+                                          device_id=cycle["device_id"], cycle_id=cycle_id)
+                    confirmed = self._rpc(
+                        "save_completed_sensor_report", {"report": report.model_dump(mode="json")}
+                    )
+                    if confirmed != str(report.report_id):
+                        raise ValueError("Cloud cycle receipt does not match")
+                    result = self._rpc("save_public_cycle_annotation", payload)
+                    status = result.get("status") if isinstance(result, dict) else None
+            except (httpx.HTTPError, ValueError) as exc:
+                raise ValueError(
+                    "Cycle cloud save could not be confirmed. Refresh and retry the annotation."
+                ) from exc
         if status != "saved":
             raise ValueError({
                 "conflict": "This annotation changed. Refresh before editing.",
-                "unavailable": "This cycle or label is unavailable for public editing.",
+                "unavailable": "Cycle scope mismatch or archived label. Check your selection.",
                 "limited": "Too many recent edits to this cycle. Try again in a minute.",
             }.get(status, "The annotation save could not be confirmed."))
         self.refresh_edits()

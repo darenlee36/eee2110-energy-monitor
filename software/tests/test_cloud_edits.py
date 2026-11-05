@@ -263,3 +263,98 @@ def test_public_cloud_write_only_sends_annotation_and_scope(tmp_path, monkeypatc
         "p_profile_id": cycle["profile_id"], "p_origin": cycle["data_origin"],
         "p_label": "Morning mug", "p_note": "0.5 L", "p_expected_id": None,
     })]
+
+def test_new_sensor_annotation_persists_cycle_before_retry(tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    from energy_monitor.models import CycleDetectionSettings
+    from energy_monitor.simulator import batch_readings, generate_cycle_scenario
+
+    store = SupabaseCycleStore(tmp_path / "new-sensor.db", CONFIG)
+    samples = [sample.model_copy(update={"firmware_version": "pzem-fw-0.2.6"})
+               for sample in generate_cycle_scenario("normal", datetime(2026, 11, 5, tzinfo=UTC))]
+    for batch in batch_readings(samples):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    cycle = store.fetch_cycles()[0]
+    before = store.fetch_cycle_readings(cycle["cycle_id"])
+    durable_cycles, saved_reports, history = {}, {}, []
+
+    def get(url, *, headers, params, timeout):
+        assert url == CONFIG.url + "/rest/v1/appliance_cycles"
+        assert params == {"select": "cycle_id", "cycle_id": "eq." + cycle["cycle_id"]}
+        assert headers["apikey"] == CONFIG.service_role_key
+        rows = [{"cycle_id": key} for key in durable_cycles]
+        return httpx.Response(200, json=rows, request=httpx.Request("GET", url))
+
+    def rpc(name, payload):
+        if name == "save_completed_sensor_report":
+            report = payload["report"]
+            evidence = report["evidence_snapshot"]["cycles"][0]
+            assert report["engine"] == "template"
+            assert evidence["cycle_id"] == cycle["cycle_id"]
+            assert evidence["meter_energy_kwh"] == cycle["meter_energy_kwh"]
+            durable_cycles[evidence["cycle_id"]] = evidence
+            saved_reports[report["report_id"]] = report
+            return report["report_id"]
+        if name == "save_public_cycle_annotation":
+            if payload["p_cycle_id"] not in durable_cycles:
+                return {"status": "unavailable"}
+            assert payload["p_device_id"] == cycle["device_id"]
+            assert payload["p_profile_id"] == cycle["profile_id"]
+            assert payload["p_origin"] == "sensor"
+            current = history[-1] if history else {}
+            if (current.get("label") == payload["p_label"]
+                    and current.get("note") == payload["p_note"]):
+                return {"status": "saved"}
+            if payload["p_expected_id"] != current.get("id"):
+                return {"status": "conflict"}
+            history.append({"id": str(uuid4()), "label": payload["p_label"],
+                            "note": payload["p_note"], "public": True})
+            return {"status": "saved"}
+        assert name == "dashboard_cycle_annotation"
+        return history[-1] if history else {}
+
+    monkeypatch.setattr(httpx, "get", get)
+    monkeypatch.setattr(store, "_rpc", rpc)
+    monkeypatch.setattr(store, "refresh_edits", lambda: None)
+    store.save_cycle_annotation(cycle["cycle_id"], label="Normal", note="Approx. 700–800 mL")
+    assert len(saved_reports) == 1
+    report_before = next(iter(saved_reports.values())).copy()
+    annotation = store.fetch_cycle_annotation(cycle["cycle_id"])
+    store.save_cycle_annotation(cycle["cycle_id"], label="Normal", note="Volume not exact",
+                                expected_id=annotation["id"])
+    store.save_cycle_annotation(cycle["cycle_id"], label="Normal", note="Volume not exact")
+    assert len(history) == 2
+    assert len(saved_reports) == 1
+    assert next(iter(saved_reports.values())) == report_before
+    assert store.fetch_cycle_readings(cycle["cycle_id"]) == before
+
+    reopened = SupabaseCycleStore(tmp_path / "fresh-annotations.db", CONFIG)
+    monkeypatch.setattr(reopened, "_rpc", rpc)
+    assert reopened.fetch_cycle_annotation(cycle["cycle_id"])["note"] == "Volume not exact"
+
+
+@pytest.mark.parametrize("cloud_rows", [[{"cycle_id": "already-saved"}], {"invalid": "response"}])
+def test_unavailable_saved_cycle_cannot_trigger_report_write(tmp_path, monkeypatch, cloud_rows):
+    from energy_monitor.models import CycleDetectionSettings
+    from energy_monitor.simulator import batch_readings, generate_cycle_scenario
+
+    store = SupabaseCycleStore(tmp_path / "scope-error.db", CONFIG)
+    for batch in batch_readings([
+        s.model_copy(update={"firmware_version": "pzem-fw-0.2.6"})
+        for s in generate_cycle_scenario("normal", datetime(2026, 11, 5, tzinfo=UTC))
+    ]):
+        store.insert_batch(batch)
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    calls = []
+    def rpc(name, payload):
+        calls.append(name)
+        assert name == "save_public_cycle_annotation"
+        return {"status": "unavailable"}
+    monkeypatch.setattr(store, "_rpc", rpc)
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(
+        200, json=cloud_rows, request=httpx.Request("GET", url)))
+    with pytest.raises(ValueError):
+        store.save_cycle_annotation(store.fetch_cycles()[0]["cycle_id"], label="Normal", note="")
+    assert calls == ["save_public_cycle_annotation"]
