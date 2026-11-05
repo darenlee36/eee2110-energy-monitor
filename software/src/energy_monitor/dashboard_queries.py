@@ -53,7 +53,9 @@ class CycleListItem(BaseModel):
 class LiveView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    state: Literal["empty", "idle", "heating", "finalizing", "cycle_complete", "unconfirmed"]
+    state: Literal[
+        "empty", "idle", "monitoring", "heating", "finalizing", "cycle_complete", "unconfirmed"
+    ]
     connection_state: ConnectionState
     updated_at: datetime | None
     received_at: datetime | None = None
@@ -204,6 +206,24 @@ def matches_source(origin: str, record_source: str, source_filter: str) -> bool:
     return origin == source_filter
 
 
+def _has_measured_load(readings: list[TelemetryReading]) -> bool:
+    # Display only: the observed idle baseline was 0 W and steady charging was 9.9–18.4 W.
+    # Require two votes in three consecutive readings; tolerate a single low sample.
+    votes = 0
+    newer = None
+    for reading in reversed(readings[-3:]):
+        if reading.quality_status is not QualityStatus.VALID:
+            break
+        if newer is not None and (
+            newer.sample_sequence != reading.sample_sequence + 1
+            or not 0 < (newer.timestamp - reading.timestamp).total_seconds() <= 8
+        ):
+            break
+        votes += reading.active_power_w >= 5.0
+        newer = reading
+    return votes >= 2
+
+
 def get_live_view(
     store: SQLiteTelemetryStore, now: datetime, *, source_filter: str = "all",
 ) -> LiveView:
@@ -286,6 +306,8 @@ def get_live_view(
         <= 30
     ):
         state = "cycle_complete"
+    elif _has_measured_load(recent_readings):
+        state = "monitoring"
     else:
         state = "idle"
 

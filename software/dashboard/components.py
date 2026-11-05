@@ -425,7 +425,8 @@ def live_status(view: LiveView) -> tuple[str, str]:
         return "Connecting", "idle"
     return {
         "idle": ("Ready", "idle"),
-        "heating": ("Monitoring Load", "heating"),
+        "monitoring": ("Monitoring", "idle"),
+        "heating": ("Active Load Detected", "heating"),
         "finalizing": ("Finalizing", "finalizing"),
         "cycle_complete": ("Cycle Complete", "complete"),
     }[view.state]

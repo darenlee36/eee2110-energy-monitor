@@ -66,7 +66,7 @@ def test_real_batch_replay_and_numerical_report(tmp_path, monkeypatch):
                 63000030: "finalizing", 63000036: "cycle_complete",
             }[page[-1]["sample_sequence"]]
             assert live_status(view)[0] == {
-                "idle": "Ready", "heating": "Monitoring Load",
+                "idle": "Ready", "heating": "Active Load Detected",
                 "finalizing": "Finalizing", "cycle_complete": "Cycle Complete",
             }[view.state]
         if view.state == "cycle_complete" and page[-1]["sample_sequence"] == 63000036:
@@ -74,7 +74,9 @@ def test_real_batch_replay_and_numerical_report(tmp_path, monkeypatch):
             assert view.last_cycle.ended_at.isoformat() == "2026-11-04T08:09:19+00:00"
             assert view.last_cycle.energy_kwh == pytest.approx(0.047)
         if page[-1]["sample_sequence"] >= 63000048:
-            assert view.state == "idle"
+            # The R1B replay includes a low-power charging tail after the kettle cycle.
+            assert view.state == ("idle" if page[-1]["sample_sequence"] == 63000066
+                                  else "monitoring")
 
     store = SupabaseCycleStore(store.database_path, CONFIG, can_edit=True)
     assert store.count_readings() == 78

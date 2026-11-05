@@ -679,7 +679,7 @@ def test_stale_live_display_labels_last_known_values(tmp_path, monkeypatch):
     assert not app.exception
     assert any("Offline" in m.value for m in app.markdown)
     assert "Last recorded power" in [m.label for m in app.metric]
-    assert not any("Monitoring Load" in m.value for m in app.markdown)
+    assert not any("Active Load Detected" in m.value for m in app.markdown)
 
 
 def test_cycle_receipt_uses_myt_across_midnight(tmp_path, monkeypatch):

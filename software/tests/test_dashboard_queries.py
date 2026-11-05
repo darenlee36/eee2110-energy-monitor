@@ -1,6 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
+import pytest
+
+from dashboard.components import live_status
 from energy_monitor.dashboard_queries import (
     _summary_from_row,
     comparison_text,
@@ -8,7 +12,7 @@ from energy_monitor.dashboard_queries import (
     get_live_view,
     list_cycle_items,
 )
-from energy_monitor.models import CycleDetectionSettings, VolumeClass
+from energy_monitor.models import CycleDetectionSettings, QualityStatus, TelemetryBatch, VolumeClass
 from energy_monitor.simulator import batch_readings, generate_cycle_scenario
 from energy_monitor.storage import SQLiteTelemetryStore
 
@@ -187,3 +191,59 @@ def test_source_filter_preserves_history_and_cycle_status(tmp_path):
     assert matches_source("unknown", "manual", "manual")
     assert not matches_source("sensor", "manual", "sensor")
     assert matches_source("mixed", "measured", "unverified")
+
+
+@pytest.mark.parametrize(
+    ("interval", "powers", "banners"),
+    [
+        # Observed 5 November charger startup followed by a one-sample dropout.
+        (3, [0, 0, 6.5, 15.5, 13.6, 0, 11.1, 0, 0],
+         ["Ready", "Ready", "Ready", "Monitoring", "Monitoring",
+          "Monitoring", "Monitoring", "Ready", "Ready"]),
+        # Measured lead-up to the screenshot, replayed at the legacy cadence.
+        (5, [0, 0, 11.3, 11.3, 11.1],
+         ["Ready", "Ready", "Ready", "Monitoring", "Monitoring"]),
+        (3, [0, 0, 18.4, 0, 0], ["Ready"] * 5),
+        (12, [11.3, 11.3, 11.1], ["Ready"] * 3),
+    ],
+)
+def test_live_small_load_requires_recent_corroboration(tmp_path, interval, powers, banners):
+    store = SQLiteTelemetryStore(tmp_path / "small-load.db")
+    start = datetime(2026, 11, 5, 3, 26, 2, tzinfo=UTC)
+    base = generate_cycle_scenario("normal", start)[0]
+    for index, (power, banner) in enumerate(zip(powers, banners, strict=True)):
+        timestamp = start + timedelta(seconds=index * interval)
+        sample = base.model_copy(update={
+            "timestamp": timestamp,
+            "sample_sequence": index + 1,
+            "firmware_version": "pzem-fw-0.2.5" if interval == 5 else "pzem-fw-0.2.6",
+            "active_power_w": power,
+            "current_a": power / 115,
+        })
+        store.insert_batch(TelemetryBatch(batch_id=uuid4(), readings=[sample]))
+        assert live_status(get_live_view(store, timestamp, source_filter="sensor"))[0] == banner
+    store.process_cycles(CycleDetectionSettings.simulation_defaults())
+    assert store.fetch_cycles() == []
+
+
+def test_live_small_load_yields_to_invalid_and_stale_readings(tmp_path):
+    store = SQLiteTelemetryStore(tmp_path / "invalid-load.db")
+    start = datetime(2026, 11, 5, 3, 31, 44, tzinfo=UTC)
+    base = generate_cycle_scenario("normal", start)[0]
+    assert live_status(get_live_view(store, start))[0] == "Connecting"
+    for index, quality in enumerate((QualityStatus.VALID, QualityStatus.VALID,
+                                     QualityStatus.READ_ERROR, QualityStatus.VALID)):
+        timestamp = start + timedelta(seconds=index * 3)
+        sample = base.model_copy(update={
+            "timestamp": timestamp,
+            "sample_sequence": index + 1,
+            "firmware_version": "pzem-fw-0.2.6",
+            "active_power_w": 11.1,
+            "current_a": 0.098,
+            "quality_status": quality,
+        })
+        store.insert_batch(TelemetryBatch(batch_id=uuid4(), readings=[sample]))
+        assert live_status(get_live_view(store, timestamp))[0] == (
+            "Ready", "Monitoring", "Connecting", "Ready"
+        )[index]
+    assert live_status(get_live_view(store, timestamp + timedelta(seconds=46)))[0] == "Offline"
