@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "algorithm": "pilot-deviation-v1",
+  "feature_version": "duration-measured-power-v1",
+  "baseline_id": "pilot-deviation-v1-f1f5564e68e2",
+  "profile_id": "tefal-kettle",
+  "device_scope_sha256": "ef802dd96372a66e55390d3b2c26886e3332dcb01c44a71523a59ec358b3afb2",
+  "reference_date": "2026-11-05",
+  "source": "Supabase sensor cycle summaries",
+  "source_reference_sha256": "f1f5564e68e2dd94176d53c77402114993fef90bfbacf7429427dc173c05e543",
+  "annotation_eligibility": "Complete",
+  "independently_reviewed": false,
+  "parameters": {
+    "duration_seconds": {
+      "median": 220.5,
+      "mad": 15.0,
+      "scale": 22.238999999999997,
+      "weight": 0.7
+    },
+    "average_power_w": {
+      "median": 1801.2951443829115,
+      "mad": 16.863833333333332,
+      "scale": 50.0,
+      "weight": 0.3
+    }
+  },
+  "cycles": [
+    {
+      "cycle_id": "738846fd-7d49-5512-881b-4870a9c716af",
+      "started_at": "2026-11-05T05:14:38Z",
+      "features": {
+        "duration_seconds": 189.0,
+        "average_power_w": 1812.8421875
+      },
+      "energy_kwh": 0.097,
+      "sample_count": 64
+    },
+    {
+      "cycle_id": "cea72ced-16e7-53db-8126-5c0e7f41be18",
+      "started_at": "2026-11-05T05:26:53Z",
+      "features": {
+        "duration_seconds": 222.0,
+        "average_power_w": 1783.3573333333331
+      },
+      "energy_kwh": 0.111,
+      "sample_count": 75
+    },
+    {
+      "cycle_id": "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62",
+      "started_at": "2026-11-05T05:41:41Z",
+      "features": {
+        "duration_seconds": 219.0,
+        "average_power_w": 1823.0743243243244
+      },
+      "energy_kwh": 0.113,
+      "sample_count": 74
+    },
+    {
+      "cycle_id": "d7bac46d-f049-538b-8ae4-81516fef1b45",
+      "started_at": "2026-11-05T05:52:35Z",
+      "features": {
+        "duration_seconds": 237.0,
+        "average_power_w": 1817.0849999999998
+      },
+      "energy_kwh": 0.122,
+      "sample_count": 80
+    },
+    {
+      "cycle_id": "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c",
+      "started_at": "2026-11-05T06:41:01Z",
+      "features": {
+        "duration_seconds": 174.0,
+        "average_power_w": 1759.677966101695
+      },
+      "energy_kwh": 0.086,
+      "sample_count": 59
+    },
+    {
+      "cycle_id": "c0f4c58e-df45-57db-a502-4e89e7b7527f",
+      "started_at": "2026-11-05T06:51:37Z",
+      "features": {
+        "duration_seconds": 234.0,
+        "average_power_w": 1789.748101265823
+      },
+      "energy_kwh": 0.118,
+      "sample_count": 79
+    }
+  ],
+  "ml_assessment": "not_evaluated",
+  "artifact_sha256": "a3afbe12c5f88f579a429b21f7e92c81c559f53934aee4072014b6ba2bb1b003"
+}

@@ -129,7 +129,7 @@ def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
 
 
 def render_anomaly_assessment(report: dict) -> None:
-    """Render saved evidence only; no fitting, inference or provider calls."""
+    """Render saved ML evidence and an opt-in local descriptive comparison."""
     model = report["evidence_snapshot"]["model"]
     predictions = model.get("predictions", []) if model.get("status") == "trained" else []
     evaluated = any(p.get("anomaly_score") is not None for p in predictions)
@@ -176,6 +176,41 @@ def render_anomaly_assessment(report: dict) -> None:
     st.caption(f"Training status: {training} · Model version: {version}")
     sources = sorted(report["evidence_snapshot"]["source_counts"])
     st.caption("Data provenance: " + ", ".join(sources))
+    from energy_monitor.pilot import load_pilot_reference, pilot_reference_member
+
+    with st.expander("Experimental Pilot Deviation Score"):
+        try:
+            pilot = load_pilot_reference()
+            selected = [pilot_reference_member(pilot, c)
+                        for c in report["evidence_snapshot"]["cycles"]]
+            selected = [c for c in selected if c is not None]
+        except (OSError, ValueError, KeyError, TypeError):
+            st.info("The experimental reference could not be verified.")
+        else:
+            st.caption(f"Six Supabase sensor reference cycles · {pilot['baseline_id']}")
+            st.write("Higher means further from the provisional reference, "
+                     "not probability of appliance failure.")
+            st.caption("Reference-cycle comparison. Complete annotations select collection records;"
+                       " independent normal review and model validation are pending.")
+            if not selected:
+                st.info("This report has no cycle in the frozen six-cycle reference.")
+            for cycle in selected:
+                result = cycle["pilot"]
+                st.metric("Experimental pilot deviation", f"{result['score']:.1f} / 100")
+                st.progress(result["score"] / 100, text=format_myt(cycle["started_at"]))
+                measurements = {
+                    "duration_seconds": "Duration (s)",
+                    "average_power_w": "Mean measured active power (W)",
+                }
+                st.dataframe(pd.DataFrame([
+                    {"Measurement": measurements[k], "Recorded": v["value"],
+                     "Reference median": v["reference_median"],
+                     "Scale": v["scale"], "Deviation": v["scaled_deviation"],
+                     "Weighted points": v["weighted_points"]}
+                    for k, v in result["contributions"].items()
+                ]), hide_index=True, width="stretch")
+            st.caption("Provisional 70% duration / 30% measured-power calculation."
+                       " Validated ML assessment remains Not Evaluated.")
 
 
 def render_report_dashboard(report: dict) -> None:
