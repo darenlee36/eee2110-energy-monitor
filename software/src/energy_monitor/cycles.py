@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from statistics import fmean
 from uuid import UUID, uuid5
 
+from energy_monitor.metrics import sample_interval_seconds, sampling_gap_counts
 from energy_monitor.models import (
     CycleAssessment,
     CycleDetectionSettings,
@@ -14,7 +15,6 @@ from energy_monitor.models import (
 )
 
 CYCLE_NAMESPACE = UUID("7f5795e2-fd31-4cf1-8c68-093061951230")
-EXPECTED_SAMPLE_SECONDS = 5
 
 
 def cycle_uuid(device_id: str, profile_id: str, start_sequence: int) -> UUID:
@@ -61,11 +61,17 @@ def _gap_evidence(
         int((current.timestamp - previous.timestamp).total_seconds())
         for previous, current in zip(samples, samples[1:], strict=False)
     ]
+    missing_slots = sampling_gap_counts(samples)[1:]
+    warnings = sum(count > 0 or gap > warning_gap_seconds
+                   for gap, count in zip(gaps, missing_slots, strict=True))
+    missing = sum(missing_slots)
     if terminal_gap_seconds:
         gaps.append(terminal_gap_seconds)
-    warning_gaps = [gap for gap in gaps if gap > warning_gap_seconds]
-    missing = sum(max(0, gap // EXPECTED_SAMPLE_SECONDS - 1) for gap in warning_gaps)
-    return len(warning_gaps), max(gaps, default=0), missing
+        warnings += 1
+        cadence = sample_interval_seconds(samples[-1].firmware_version)
+        if cadence:
+            missing += max(0, round(terminal_gap_seconds / cadence) - 1)
+    return warnings, max(gaps, default=0), missing
 
 
 def summarize_cycle(

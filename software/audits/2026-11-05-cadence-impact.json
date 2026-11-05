@@ -1,0 +1,68 @@
+{
+  "source": "Frozen six genuine Supabase cycle traces from 5 November 2026",
+  "scope": "read-only local replay, no production recomputation",
+  "total_samples": 431,
+  "all_summary_fields_unchanged": true,
+  "cycles": [
+    {
+      "cycle_id": "738846fd-7d49-5512-881b-4870a9c716af",
+      "sample_count": 64,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 189,
+      "meter_energy_kwh": 0.097,
+      "integrated_energy_kwh": 0.09581008333333334,
+      "differences": {}
+    },
+    {
+      "cycle_id": "cea72ced-16e7-53db-8126-5c0e7f41be18",
+      "sample_count": 75,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 222,
+      "meter_energy_kwh": 0.11100000000000002,
+      "integrated_energy_kwh": 0.110458625,
+      "differences": {}
+    },
+    {
+      "cycle_id": "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62",
+      "sample_count": 74,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 219,
+      "meter_energy_kwh": 0.11299999999999999,
+      "integrated_energy_kwh": 0.11089058333333333,
+      "differences": {}
+    },
+    {
+      "cycle_id": "d7bac46d-f049-538b-8ae4-81516fef1b45",
+      "sample_count": 80,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 237,
+      "meter_energy_kwh": 0.122,
+      "integrated_energy_kwh": 0.12010545833333333,
+      "differences": {}
+    },
+    {
+      "cycle_id": "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c",
+      "sample_count": 59,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 174,
+      "meter_energy_kwh": 0.08599999999999997,
+      "integrated_energy_kwh": 0.08595954166666667,
+      "differences": {}
+    },
+    {
+      "cycle_id": "c0f4c58e-df45-57db-a502-4e89e7b7527f",
+      "sample_count": 79,
+      "gap_count": 0,
+      "missing_sample_count": 0,
+      "duration_seconds": 234,
+      "meter_energy_kwh": 0.118,
+      "integrated_energy_kwh": 0.11668145833333333,
+      "differences": {}
+    }
+  ]
+}

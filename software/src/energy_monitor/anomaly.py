@@ -25,6 +25,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from energy_monitor.metrics import sampling_gap_counts
 from energy_monitor.models import CycleSummary
 
 FEATURE_VERSION = "cycle-features-v1"
@@ -122,7 +123,8 @@ def extract_cycle_features(cycle: dict, readings: list[dict]) -> CycleFeatures:
     try:
         times = [datetime.fromisoformat(str(r["timestamp"])) for r in readings]
         gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:], strict=False)]
-        if any(t.tzinfo is None for t in times) or any(g <= 0 or g > 7.5 for g in gaps):
+        if (any(t.tzinfo is None for t in times) or any(g <= 0 for g in gaps)
+                or any(sampling_gap_counts(readings))):
             issues.append("irregular_sampling")
         for r in readings:
             if r["quality_status"] != "valid":

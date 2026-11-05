@@ -144,7 +144,7 @@ def test_energy_cross_check_over_twenty_percent_sets_quality_note() -> None:
     assert "Energy cross-check differs" in cycle.quality_note
 
 
-@pytest.mark.parametrize(("gap_seconds", "missing"), [(10, 0), (20, 3)])
+@pytest.mark.parametrize(("gap_seconds", "missing"), [(10, 1), (20, 3)])
 def test_short_gaps_report_missing_samples_without_ending_cycle(
     gap_seconds: int,
     missing: int,

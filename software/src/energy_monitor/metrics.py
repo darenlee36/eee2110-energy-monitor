@@ -1,11 +1,77 @@
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel
 
 from energy_monitor.models import TelemetryReading
+
+
+def sample_interval_seconds(firmware: str) -> int | None:
+    """Verified firmware schedules, not network upload/arrival intervals."""
+    if firmware == "sim-0.1.0":
+        return 5
+    version = re.fullmatch(r"(?:pzem|sim)-fw-0\.2\.(\d+)", firmware)
+    if version:
+        patch = int(version[1])
+        return 5 if patch <= 5 else 3 if patch in (6, 7) else None
+    return None
+
+
+def sampling_gap_counts(readings, *, legacy_seconds: int | None = None) -> list[int]:
+    """Estimated missing slots per record (first=0); no cloud-receipt dependence.
+
+    Unknown firmware needs >=3 consistent consecutive-sequence observations at
+    either 3 or 5 seconds. Sequence holes remain evidence even without a cadence.
+    Device/profile/origin transitions do not create sampling-loss counts.
+    """
+    rows = [r.model_dump() if isinstance(r, TelemetryReading) else r for r in readings]
+    def stamp(row):
+        value = row["timestamp"]
+        return datetime.fromisoformat(value) if isinstance(value, str) else value
+    def origin(row):
+        firmware = row.get("firmware_version", "")
+        return "sensor" if firmware.startswith("pzem-") else (
+            "simulated" if firmware.startswith("sim-") else "unknown")
+    def scope(row):
+        return row.get("device_id"), row.get("profile_id"), origin(row)
+    observed = defaultdict(list)
+    for previous, current in zip(rows, rows[1:], strict=False):
+        gap = (stamp(current) - stamp(previous)).total_seconds()
+        sequence_step = (current["sample_sequence"] - previous["sample_sequence"]
+                         if isinstance(current.get("sample_sequence"), int)
+                         and isinstance(previous.get("sample_sequence"), int) else None)
+        if (scope(previous) == scope(current)
+                and previous.get("firmware_version") == current.get("firmware_version")
+                and sequence_step in (None, 1)):
+            observed[(*scope(current), current.get("firmware_version"))].append(gap)
+    inferred = {}
+    for key, gaps in observed.items():
+        # Reject mixed/ambiguous schedules; long gaps are not an observed cadence.
+        candidates = [v for v in (3, 5) if sum(abs(g - v) <= .5 for g in gaps) >= 3]
+        if len(candidates) == 1:
+            inferred[key] = candidates[0]
+    result = [0] if rows else []
+    for previous, current in zip(rows, rows[1:], strict=False):
+        if scope(previous) != scope(current):
+            result.append(0)
+            continue
+        schedules = [sample_interval_seconds(r.get("firmware_version", ""))
+                     or inferred.get((*scope(r), r.get("firmware_version")))
+                     for r in (previous, current)]
+        cadence = max(schedules) if all(schedules) else legacy_seconds
+        gap = (stamp(current) - stamp(previous)).total_seconds()
+        missing = (max(1, round(gap / cadence) - 1)
+                   if cadence and gap > cadence * 1.5 else 0)
+        if (isinstance(current.get("sample_sequence"), int)
+                and isinstance(previous.get("sample_sequence"), int)
+                and current.get("device_uptime_ms", 0) >= previous.get("device_uptime_ms", 0)):
+            missing = max(missing, current["sample_sequence"] - previous["sample_sequence"] - 1)
+        result.append(max(0, missing))
+    return result
 
 
 class AlertLevel(StrEnum):

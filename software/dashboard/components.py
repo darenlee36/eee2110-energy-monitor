@@ -12,6 +12,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView, get_cycle_detail
+from energy_monitor.metrics import sampling_gap_counts
 from energy_monitor.models import (
     ConnectionState,
     ManualCycleRecord,
@@ -72,10 +73,14 @@ def build_report_trace(cycle: dict, measurement: str) -> go.Figure | None:
     ):
         return None
     elapsed, values = [], []
+    # Old saved report snapshots omit cadence/sequence metadata. Preserve their
+    # five-second display policy unless repeated timestamps establish a cadence.
+    gap_counts = sampling_gap_counts(readings, legacy_seconds=(
+        5 if not any(r.get("firmware_version") for r in readings) else None))
     previous_time = None
-    for reading in readings:
+    for index, reading in enumerate(readings):
         timestamp = datetime.fromisoformat(reading["timestamp"])
-        if previous_time is not None and (timestamp - previous_time).total_seconds() > 7.5:
+        if previous_time is not None and gap_counts[index]:
             elapsed.append(None)
             values.append(None)
         elapsed.append((timestamp - start).total_seconds())
@@ -580,8 +585,9 @@ def build_electrical_figure(
          else [malaysia_time(t) for t in times])
     y = [getattr(r, field) if r.quality_status.value == "valid" else None for r in readings]
     # Insert gaps between separated samples so the chart never implies a measurement in between.
+    gap_counts = sampling_gap_counts(readings)
     for index in range(len(times) - 1, 0, -1):
-        if (times[index] - times[index - 1]).total_seconds() > 7.5:
+        if gap_counts[index]:
             x.insert(index, x[index])
             y.insert(index, None)
     time_hover = "%{x:g} s" if elapsed else "%{x|%H:%M:%S} MYT"
@@ -651,6 +657,12 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
         [reading.voltage_v, reading.current_a, reading.quality_status.value]
         for reading in readings
     ]
+    gap_counts = sampling_gap_counts(readings)
+    for index in range(len(readings) - 1, 0, -1):
+        if gap_counts[index]:
+            timestamps.insert(index, timestamps[index])
+            power.insert(index, None)
+            custom_hover.insert(index, [None, None, "sampling gap"])
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
@@ -658,6 +670,7 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
             y=power,
             mode="lines",
             name="Active power",
+            connectgaps=False,
             line={"color": "#3BD7FF", "width": 3},
             fill="tozeroy",
             fillcolor="rgba(59, 215, 255, 0.10)",
@@ -745,6 +758,14 @@ def build_live_power_figure(view: LiveView, start_threshold_w: float) -> go.Figu
 def build_power_quality_figure(view: LiveView) -> go.Figure:
     readings = view.recent_readings
     timestamps = [malaysia_time(reading.timestamp) for reading in readings]
+    frequency = [reading.frequency_hz for reading in readings]
+    factors = [reading.power_factor for reading in readings]
+    gap_counts = sampling_gap_counts(readings)
+    for index in range(len(readings) - 1, 0, -1):
+        if gap_counts[index]:
+            timestamps.insert(index, timestamps[index])
+            frequency.insert(index, None)
+            factors.insert(index, None)
     figure = make_subplots(
         rows=2,
         cols=1,
@@ -754,7 +775,7 @@ def build_power_quality_figure(view: LiveView) -> go.Figure:
     figure.add_trace(
         go.Scatter(
             x=timestamps,
-            y=[reading.frequency_hz for reading in readings],
+            y=frequency, connectgaps=False,
             mode="lines",
             name="Frequency",
             line={"color": "#E22DFF", "width": 2.5},
@@ -766,7 +787,7 @@ def build_power_quality_figure(view: LiveView) -> go.Figure:
     figure.add_trace(
         go.Scatter(
             x=timestamps,
-            y=[reading.power_factor for reading in readings],
+            y=factors, connectgaps=False,
             mode="lines",
             name="Power factor",
             line={"color": "#72F6C7", "width": 2.5},
@@ -825,8 +846,9 @@ def cycle_energy_points(
         if reading.quality_status.value == "valid" else None
         for reading in readings
     ]
+    gap_counts = sampling_gap_counts(readings)
     for index in range(len(readings) - 1, 0, -1):
-        if elapsed[index] - elapsed[index - 1] > 7.5:
+        if gap_counts[index]:
             elapsed.insert(index, elapsed[index])
             energy.insert(index, None)
     return elapsed, energy
