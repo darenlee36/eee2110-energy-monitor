@@ -102,6 +102,21 @@ def test_history_over_ten_thousand_is_not_truncated(tmp_path):
         date_start=date(2020, 1, 1), date_end=date(2020, 1, 1))) == 1
 
 
+def test_complete_sensor_cycle_numbers_ignore_filters_and_skip_incomplete(tmp_path, monkeypatch):
+    store = populated_store(tmp_path)
+    source = store.fetch_cycles()[0]
+    rows = [
+        {**source, "cycle_id": str(uuid4()), "started_at": f"2026-11-0{day}T06:00:00+00:00",
+         "data_origin": "sensor", "record_source": "measured", "custom_label": label}
+        for day, label in [(5, "Complete"), (4, "Incomplete"), (3, "Complete")]
+    ]
+    monkeypatch.setattr(store, "fetch_cycles", lambda **kwargs: rows)
+    assert [row.cycle_number for row in list_cycle_items(store)] == [2, None, 1]
+    visible = list_cycle_items(store, date_filter="Custom date range",
+                               date_start=date(2026, 11, 5), date_end=date(2026, 11, 5))
+    assert [row.cycle_number for row in visible] == [2]
+
+
 def test_filter_reruns_preserve_selection_annotations_and_reset(tmp_path, monkeypatch):
     database = build_dashboard_cycle_database(tmp_path)
     monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")

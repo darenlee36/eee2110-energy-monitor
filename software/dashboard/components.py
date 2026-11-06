@@ -188,11 +188,13 @@ def render_cycle_assessment(
     cycle: dict, store: SQLiteTelemetryStore | None,
 ) -> dict | None:
     from energy_monitor.experimental_if import (
+        assess_current_model,
         assess_selected_cycle,
         current_rolling_power_comparison,
         rolling_power_comparison,
     )
 
+    st.subheader("Anomaly score")
     try:
         row, release = assess_selected_cycle(cycle, store)
     except ValueError as exc:
@@ -207,47 +209,70 @@ def render_cycle_assessment(
         rolling = current_rolling_power_comparison(row, release, store)
     except (ValueError, KeyError, TypeError):
         st.caption("The current rolling baseline is unavailable.")
-    else:
-        if rolling is not None:
-            power = row["features"]["average_power_w"]
-            mean = rolling["mean_power_w"]
-            change_pct = 100 * rolling["power_change_w"] / mean
-            st.metric("Power deviation from rolling baseline", f"{change_pct:+.1f}%")
-            st.metric(
-                f"Current rolling baseline · {rolling['cycle_count']} eligible cycles",
-                f"{mean:,.1f} W",
+    current = None
+    if rolling is not None:
+        try:
+            current = assess_current_model(row, rolling, release)
+        except (ValueError, KeyError, TypeError, ImportError):
+            st.info("Current Isolation Forest score unavailable for this cycle.")
+    if current is not None:
+        prediction, model = current
+        st.metric("Current Isolation Forest anomaly score", f"{prediction['score']:.2f} / 100")
+        st.caption(
+            f"Experimental · {len(model['training_cycle_ids'])} eligible training cycles · "
+            f"model {model['artifact_sha256'][:12]}"
+        )
+        with st.expander("How the current anomaly score was calculated"):
+            st.write(
+                f"The 200-tree Isolation Forest fits the current pool of "
+                f"{len(model['training_cycle_ids'])} verified Complete cycles using duration "
+                "and measured mean power. Scores refresh when the eligible pool changes."
             )
-            with st.expander("How this rolling comparison was calculated"):
-                st.write(
-                    f"The current baseline averages the measured mean power of "
-                    f"{rolling['cycle_count']} Complete cycles with verified sensor readings. "
-                    "Each eligible cycle contributes once, including the selected cycle "
-                    f"when it qualifies. This cycle averaged {power:,.1f} W."
+            st.markdown(
+                f"`−100 × ({prediction['raw_score']:.9f}) = {prediction['score']:.2f}`"
+            )
+            st.caption("The selected cycle contributed to this fit. Independent detection "
+                       "accuracy has yet to be established.")
+    if rolling is not None:
+        power = row["features"]["average_power_w"]
+        mean = rolling["mean_power_w"]
+        difference = rolling["power_change_w"]
+        change_pct = 100 * difference / mean
+        st.metric("Power deviation from rolling baseline", f"{change_pct:+.1f}%")
+        st.metric(
+            f"Current rolling baseline · {rolling['cycle_count']} eligible cycles",
+            f"{mean:,.1f} W",
+        )
+        st.caption(f"Cycle mean {power:,.1f} W · Difference {difference:+,.1f} W")
+        with st.expander("Rolling baseline deviation details"):
+            st.write(
+                f"The current baseline averages the measured mean power of "
+                f"{rolling['cycle_count']} Complete cycles with verified sensor readings. "
+                "Each eligible cycle contributes once, including the selected cycle "
+                f"when it qualifies. This cycle averaged {power:,.1f} W."
+            )
+            st.markdown(
+                f"`({power:,.1f} W − {mean:,.1f} W) ÷ {mean:,.1f} W × 100 "
+                f"= {change_pct:+.1f}%`"
+            )
+            st.caption(f"Baseline version {rolling['version']}.")
+            try:
+                original = rolling_power_comparison(row, release, store)
+            except (ValueError, KeyError, TypeError):
+                original = None
+            if original is not None:
+                st.caption(
+                    f"Original comparison · {original['cycle_count']} earlier cycles · "
+                    f"{original['mean_power_w']:,.1f} W · {original['version']}."
                 )
-                st.markdown(
-                    f"`({power:,.1f} W − {mean:,.1f} W) ÷ {mean:,.1f} W × 100 "
-                    f"= {change_pct:+.1f}%`"
-                )
-                st.caption(f"Baseline version {rolling['version']}.")
-                try:
-                    original = rolling_power_comparison(row, release, store)
-                except (ValueError, KeyError, TypeError):
-                    original = None
-                if original is not None:
-                    st.caption(
-                        f"Original comparison · {original['cycle_count']} earlier cycles · "
-                        f"{original['mean_power_w']:,.1f} W · {original['version']}."
-                    )
-        else:
-            st.caption("No verified Complete cycles are available for comparison.")
     measurements = [
         ("Duration", row["features"]["duration_seconds"], "duration_seconds", "s"),
         ("Mean active power", row["features"]["average_power_w"], "average_power_w", "W"),
         ("Meter energy", row["energy_kwh"], "energy_kwh", "kWh"),
     ]
-    with st.expander("Experimental Isolation Forest details"):
+    with st.expander("Original Isolation Forest assessment"):
         model = release["model"]
-        st.metric("Isolation Forest Anomaly Score", f"{row['score']:.2f} / 100")
+        st.metric("Original Isolation Forest anomaly score", f"{row['score']:.2f} / 100")
         assessment = "Outside" if row["raw_decision"] < 0 else "Within"
         st.write(f"{assessment} the experimental model threshold")
         role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
@@ -406,7 +431,6 @@ def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = N
             "No saved reading trace available. "
             "Older/manual reports retain their recorded summary only."
         )
-    st.subheader("Rolling power comparison")
     # Use the label belonging to the saved report's selected cycle.
     score_cycle = cycle
     if store is not None and (cached := store.fetch_cycle(cycle["cycle_id"])):
@@ -1128,6 +1152,7 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
     frame = pd.DataFrame(
         [
             {
+                "Cycle": f"Cycle {item.cycle_number}" if item.cycle_number is not None else "",
                 "Start (MYT)": malaysia_time(item.started_at).strftime(
                     "%d %b, %H:%M"
                 ),

@@ -8,7 +8,9 @@ import pytest
 from energy_monitor import experimental_if
 from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.experimental_if import (
+    assess_current_model,
     assess_selected_cycle,
+    current_rolling_power_comparison,
     display_score,
     load_release,
     preserve_first_assessment,
@@ -135,3 +137,22 @@ def test_rolling_power_compares_first_then_includes_one_mean_per_cycle():
     second = rolling_power_comparison(cycle12, with_cycle11, None)
     assert second["cycle_count"] == 11
     assert second["mean_power_w"] == pytest.approx(fmean([*powers, 2100]))
+
+
+def test_current_forest_refits_and_rescores_an_earlier_cycle_when_membership_changes():
+    _, release = load_release()
+    row = list(release["assessments"].values())[-1]
+    initial = current_rolling_power_comparison(row, release, None)
+    score, model = assess_current_model(row, initial, release)
+    new_cycle = {"cycle_id": "00000000-0000-4000-8000-000000000001",
+                 "duration_seconds": 242, "average_power_w": 2040}
+    updated = {**initial, "cycle_count": 11,
+               "training_rows": [*initial["training_rows"], new_cycle]}
+    rescored, refit = assess_current_model(row, updated, release)
+    assert len(model["training_cycle_ids"]) == 10
+    assert len(refit["training_cycle_ids"]) == 11
+    assert new_cycle["cycle_id"] in refit["training_cycle_ids"]
+    assert model["artifact_sha256"] != refit["artifact_sha256"]
+    assert score["score"] != rescored["score"]
+    assert assess_current_model(row, updated, release)[1] is refit
+    assert round(row["score"], 2) == 46.12

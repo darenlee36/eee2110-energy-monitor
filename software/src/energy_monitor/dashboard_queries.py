@@ -35,6 +35,7 @@ class CycleListItem(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     cycle_id: UUID
+    cycle_number: int | None = None
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: int
@@ -166,6 +167,8 @@ def _cycle_item(
     row: dict[str, object],
     monthly_household_kwh: Decimal | None,
     catalog: TariffCatalog | None = None,
+    *,
+    cycle_number: int | None = None,
 ) -> CycleListItem:
     summary = _summary_from_row(row)
     estimate = estimate_cycle_charge(
@@ -176,6 +179,7 @@ def _cycle_item(
     )
     return CycleListItem(
         cycle_id=summary.cycle_id,
+        cycle_number=cycle_number,
         started_at=summary.started_at,
         ended_at=summary.ended_at,
         duration_seconds=summary.duration_seconds,
@@ -409,6 +413,14 @@ def list_cycle_items(
                    time_start=time_start, time_end=time_end, now=now)
     cycle_start_matches(now, **options)  # Validate even when history is empty.
     rows = store.fetch_cycles(limit=None)
+    numbered = (
+        row["cycle_id"] for row in reversed(rows)
+        if row["status"] == CycleStatus.COMPLETED.value
+        and row.get("data_origin") == "sensor"
+        and row.get("record_source", "measured") == "measured"
+        and str(row.get("custom_label") or "").strip().casefold() == "complete"
+    )
+    cycle_numbers = {cycle_id: number for number, cycle_id in enumerate(numbered, start=1)}
     rows = [r for r in rows if matches_source(
         str(r.get("data_origin", "unknown")), str(r.get("record_source", "measured")),
         source_filter)]
@@ -427,7 +439,10 @@ def list_cycle_items(
     rows = [row for row in rows if cycle_start_matches(row["started_at"], **options)]
     monthly_usage = _monthly_usage_from_env()
     catalog = load_tariff_catalog(CATALOG_PATH)
-    return [_cycle_item(row, monthly_usage, catalog) for row in rows[:limit]]
+    return [
+        _cycle_item(row, monthly_usage, catalog, cycle_number=cycle_numbers.get(row["cycle_id"]))
+        for row in rows[:limit]
+    ]
 
 
 def get_cycle_detail(

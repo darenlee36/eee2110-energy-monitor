@@ -162,6 +162,7 @@ def test_cycles_mode_defaults_to_latest_completed_cycle(
     assert app.dataframe
     table = app.dataframe[0].value
     assert list(table.columns) == [
+        "Cycle",
         "Start (MYT)",
         "Duration",
         "Energy",

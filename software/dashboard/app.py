@@ -425,7 +425,6 @@ elif st.session_state.mode == "Cycles":
         if detail.summary.data_origin == "sensor":
             selected_cycle = store.fetch_cycle(detail.summary.cycle_id)
             if selected_cycle is not None:
-                st.subheader("Rolling power comparison")
                 render_cycle_assessment(selected_cycle, store)
         render_tariff_disclosure(
             detail.tariff_estimate,

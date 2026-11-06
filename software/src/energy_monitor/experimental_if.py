@@ -15,6 +15,7 @@ from energy_monitor.pilot import (
     PUBLIC_REFERENCE_PATH,
     WEIGHTS,
     load_pilot_reference,
+    pilot_parameters,
     pilot_reference,
     pilot_score,
 )
@@ -257,7 +258,9 @@ def current_rolling_power_comparison(row: dict, release: dict, store) -> dict | 
         powers = [prior["features"]["average_power_w"] for prior in frozen.values()]
         result = {"cycle_count": len(powers), "mean_power_w": (
             statistics.fmean(powers) if powers else None
-        )}
+        ), "training_rows": [
+            {"cycle_id": prior["cycle_id"], **prior["features"]} for prior in frozen.values()
+        ]}
     reference = {**result, "version": "current-rolling-power-v1"}
     _validate_rolling_reference(reference, version="current-rolling-power-v1")
     if reference["cycle_count"] == 0:
@@ -265,6 +268,43 @@ def current_rolling_power_comparison(row: dict, release: dict, store) -> dict | 
     return {**reference, "power_change_w": (
         row["features"]["average_power_w"] - reference["mean_power_w"]
     )}
+
+
+def assess_current_model(row: dict, rolling: dict, release: dict) -> tuple[dict, dict]:
+    """Refit the experimental forest once per distinct verified cycle pool."""
+    members = rolling["training_rows"]
+    if len(members) != rolling["cycle_count"] or len(members) < 6:
+        raise ValueError("A complete pool of at least six verified cycles is required.")
+    cycles = sorted((
+        {"cycle_id": member["cycle_id"], "features": {key: float(member[key]) for key in WEIGHTS}}
+        for member in members
+    ), key=lambda cycle: cycle["cycle_id"])
+    seed = release["model"]["training_reference"]
+    model = _fit_current_model(json.dumps(cycles, sort_keys=True, allow_nan=False),
+                               json.dumps(seed, sort_keys=True))
+    try:
+        index = model["training_cycle_ids"].index(row["cycle_id"])
+    except ValueError as exc:
+        raise ValueError("This cycle is outside the current verified training pool.") from exc
+    raw_score = model["in_sample_raw_scores"][index]
+    return {
+        "score": display_score(raw_score), "raw_score": raw_score,
+        "raw_decision": model["in_sample_decisions"][index],
+    }, model
+
+
+@lru_cache(maxsize=4)
+def _fit_current_model(cycles_json: str, seed_json: str) -> dict:
+    cycles = json.loads(cycles_json)
+    seed = json.loads(seed_json)
+    reference = _seal({
+        **seed, "reference_revision": 2, "cycles": cycles,
+        "parent_baseline_id": seed["baseline_id"],
+        "parent_artifact_sha256": seed["artifact_sha256"],
+        "baseline_id": "pilot-deviation-v2-" + _digest({"cycles": cycles})[:12],
+        "parameters": pilot_parameters([cycle["features"] for cycle in cycles]),
+    })
+    return fit_experiment(reference)
 
 
 def _validate_rolling_reference(

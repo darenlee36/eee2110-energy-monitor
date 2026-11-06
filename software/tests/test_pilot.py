@@ -140,7 +140,7 @@ def test_raw_quality_gates_remain_in_force(fault):
         pilot_reference(item)
 
 
-def test_cycle_display_leads_with_rolling_deviation_and_keeps_experimental_scores():
+def test_cycle_display_leads_with_current_model_and_keeps_original_scores():
     cycle_template = report_cycle(load_pilot_reference())
     script = f"""
 from dashboard.components import render_cycle_assessment
@@ -153,17 +153,21 @@ for record in ref['cycles']:
 """
     app = AppTest.from_string(script, default_timeout=10).run()
     assert not app.exception
-    values = [m.value for m in app.metric if m.label == "Isolation Forest Anomaly Score"]
+    values = [m.value for m in app.metric if m.label == "Original Isolation Forest anomaly score"]
     assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
                       "61.00 / 100", "45.43 / 100"]
     assert [m.value for m in app.metric if m.label.startswith("Current rolling baseline")] == [
         "1,862.4 W"
     ] * 6
-    assert app.metric[0].label == "Power deviation from rolling baseline"
-    assert app.metric[0].value == "-2.7%"
+    assert app.metric[0].label == "Current Isolation Forest anomaly score"
+    assert app.metric[1].label == "Power deviation from rolling baseline"
+    assert app.metric[1].value == "-2.7%"
     assert len(app.dataframe) == 6
-    assert app.expander[0].label == "How this rolling comparison was calculated"
-    assert app.expander[1].label == "Experimental Isolation Forest details"
+    assert app.subheader[0].value == "Anomaly score"
+    assert app.expander[0].label == "How the current anomaly score was calculated"
+    assert app.expander[1].label == "Rolling baseline deviation details"
+    assert app.expander[2].label == "Original Isolation Forest assessment"
+    assert any("10 eligible training cycles" in c.value for c in app.caption)
     assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)
     assert any("Training-reference cycle" in c.value for c in app.caption)
 
