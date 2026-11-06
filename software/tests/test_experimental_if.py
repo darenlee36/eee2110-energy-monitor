@@ -69,10 +69,14 @@ def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, mon
         "started_at": row["started_at"], "ended_at": row["ended_at"],
     }
     values = {}
+    prior = {"cycle_count": 10, "mean_power_w": 1862.4}
 
     def rpc(self, name, payload):
         if name == "read_intelligence_first_score":
             return values.get(payload["p_cycle_id"])
+        if name == "read_intelligence_rolling_power":
+            assert set(payload["p_frozen_ids"]) == set(release["assessments"])
+            return prior.copy()
         assert name == "append_intelligence_first_score"
         assert cycle["custom_label"] == "Complete"
         return values.setdefault(cycle["cycle_id"], payload["p_evidence"])
@@ -85,11 +89,17 @@ def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, mon
     assert not values
     cycle["custom_label"] = "Complete"
     assert preserve_first_assessment(cycle, store)
+    prior.update(cycle_count=9, mean_power_w=1830.6)
     fresh = SupabaseCycleStore(tmp_path / "fresh.db", config)
     monkeypatch.setattr(experimental_if, "_score_trace",
                         lambda *args: pytest.fail("First score was recalculated"))
     assert not preserve_first_assessment(cycle, fresh)
-    assert assess_selected_cycle(cycle, fresh)[0]["score"] == row["score"]
+    saved, saved_release = assess_selected_cycle(cycle, fresh)
+    assert saved["score"] == row["score"]
+    comparison = rolling_power_comparison(saved, saved_release, fresh)
+    assert comparison["cycle_count"] == 10
+    assert comparison["mean_power_w"] == 1862.4
+    assert comparison["version"] == "rolling-power-v1"
     cycle["custom_label"] = "Incomplete"
     with pytest.raises(ValueError, match="Incomplete"):
         assess_selected_cycle(cycle, fresh)

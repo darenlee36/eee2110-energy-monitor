@@ -28,6 +28,7 @@ from energy_monitor.pilot_workflow import (
 
 RELEASE_PATH = PUBLIC_REFERENCE_PATH.with_name("kettle-if-v1.json")
 SCORE_MAPPING = "negative-score-samples-times-100-v1"
+ROLLING_POWER_VERSION = "rolling-power-v1"
 CADENCES = {"pzem-fw-0.2.5": 5, **{f"pzem-fw-0.2.{n}": 3 for n in range(6, 10)}}
 
 
@@ -187,6 +188,7 @@ def validate_first_assessment(row: dict, cycle: dict, release: dict) -> None:
             or any(not math.isclose(float(cycle[k]), row["features"][k], abs_tol=.01)
                    for k in WEIGHTS)):
         raise ValueError("The saved first score does not match the cycle or model.")
+    _validate_rolling_reference(row.get("rolling_power"))
 
 
 def preserve_first_assessment(cycle: dict, store) -> bool:
@@ -200,29 +202,47 @@ def preserve_first_assessment(cycle: dict, store) -> bool:
     if saved is not None:
         validate_first_assessment(saved, cycle, release)
         return False
-    row = _seal(_score_trace(cycle, store, forest, model))
+    row = _score_trace(cycle, store, forest, model)
+    prior = store.fetch_rolling_power(row["cycle_id"], list(release["assessments"]))
+    reference = {**prior, "version": ROLLING_POWER_VERSION}
+    _validate_rolling_reference(reference)
+    row = _seal({**row, "rolling_power": reference})
     confirmed = store.append_first_assessment(row)
     validate_first_assessment(confirmed, cycle, release)
-    if row != confirmed:
+    if _seal({**row, "rolling_power": confirmed["rolling_power"]}) != confirmed:
         raise ValueError("Concurrent first score differs from this cycle evidence.")
     return True
 
 
 def rolling_power_comparison(row: dict, release: dict, store) -> dict | None:
     frozen = release["assessments"]
-    if hasattr(store, "fetch_rolling_power"):
-        result = store.fetch_rolling_power(row["cycle_id"], list(frozen))
-        count, mean = result["cycle_count"], result["mean_power_w"]
-    else:
-        started_at = datetime.fromisoformat(row["started_at"])
+    if row["cycle_id"] in frozen or not hasattr(store, "fetch_rolling_power"):
+        selected = frozen.get(row["cycle_id"], row)
+        started_at = datetime.fromisoformat(selected["started_at"])
         powers = [prior["features"]["average_power_w"] for prior in frozen.values()
-                  if datetime.fromisoformat(prior["ended_at"]) < started_at]
-        count, mean = len(powers), statistics.fmean(powers) if powers else None
+                  if prior["cycle_id"] != row["cycle_id"]
+                  and datetime.fromisoformat(prior["ended_at"]) < started_at]
+        reference = {
+            "version": ROLLING_POWER_VERSION, "cycle_count": len(powers),
+            "mean_power_w": statistics.fmean(powers) if powers else None,
+        }
+    else:
+        reference = row.get("rolling_power")
+    _validate_rolling_reference(reference)
+    if reference["cycle_count"] == 0:
+        return None
+    return {**reference, "power_change_w": (
+        row["features"]["average_power_w"] - reference["mean_power_w"]
+    )}
+
+
+def _validate_rolling_reference(reference: dict | None) -> None:
+    if not isinstance(reference, dict) or reference.get("version") != ROLLING_POWER_VERSION:
+        raise ValueError("A saved rolling comparison is unavailable.")
+    count, mean = reference.get("cycle_count"), reference.get("mean_power_w")
     if type(count) is not int or count < 0:
         raise ValueError("Invalid prior cycle count.")
-    if not count:
-        return None
-    if type(mean) not in (float, int) or not 0 < mean <= 25_000:
+    if (count == 0 and mean is not None) or (
+        count > 0 and (type(mean) not in (float, int) or not 0 < mean <= 25_000)
+    ):
         raise ValueError("Invalid prior cycle mean power.")
-    return {"cycle_count": count, "mean_power_w": mean,
-            "power_change_w": row["features"]["average_power_w"] - mean}

@@ -219,7 +219,7 @@ def render_experimental_assessment(
                 f"{rolling['mean_power_w']:,.1f} W",
             )
             st.caption("Each earlier Complete cycle with a verified sensor trace contributes "
-                       "once. This cycle joins the comparison for later cycles.")
+                       f"once. Baseline version {rolling['version']}.")
         else:
             st.caption("No earlier verified Complete cycles are available for comparison.")
     measurements = [
