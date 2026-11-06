@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -15,10 +16,10 @@ from components import (
     render_anomaly_assessment,
     render_command_bar,
     render_cycle_annotation,
+    render_cycle_assessment,
     render_cycle_filters,
     render_cycle_history,
     render_cycle_receipt,
-    render_experimental_assessment,
     render_live_state,
     render_manual_cycle_entry,
     render_report_dashboard,
@@ -151,6 +152,69 @@ def sync_cloud_source() -> None:
         st.warning("Cloud edits unavailable. Showing locally cached records.")
 
 
+def render_owner_cycle_settings() -> None:
+    password = os.environ.get("ENERGY_MONITOR_EDIT_PASSWORD", "")
+    if not (source_mode == "local" or isinstance(store, SupabaseCycleStore)):
+        return
+    with st.expander("Owner cycle settings"):
+        if not password:
+            st.caption("An owner password must be configured to change shared cycle thresholds.")
+            return
+        supplied = st.text_input("Owner password", type="password")
+        if not hmac.compare_digest(supplied.encode(), password.encode()):
+            return
+        if isinstance(store, SupabaseCycleStore):
+            store.can_edit = True
+            try:
+                store.refresh_appliance_rules()
+            except SupabaseSyncError:
+                st.warning("Owner rules are unavailable until the cloud registry is reachable.")
+                return
+        streams = store.telemetry_scopes()
+        if not streams:
+            st.info("Record at least one reading before choosing a monitor.")
+            return
+        device, profile = st.selectbox("Telemetry stream", streams,
+                                       format_func=lambda pair: " / ".join(pair))
+        name, settings = store.active_appliance_rule(device, profile, datetime.now(UTC))
+        st.caption(f"Current rules: {name} · {settings.version}")
+        st.caption("Select the appliance connected to this meter. Continuous loads may never "
+                   "produce a completed on/off cycle.")
+        choices = ["Electric kettle", "Rice cooker", "Fan", "Phone charger", "Custom"]
+        with st.form(f"cycle-rule-{device}-{profile}-{settings.version}"):
+            appliance = st.selectbox("Appliance", choices,
+                                     index=choices.index(name) if name in choices else 4)
+            custom_name = st.text_input("Custom appliance name", value=name, max_chars=64)
+            start = st.number_input("Start threshold (W)", min_value=0.1, max_value=25_000.0,
+                                    value=settings.start_power_w)
+            stop = st.number_input("Stop threshold (W)", min_value=0.1, max_value=25_000.0,
+                                   value=settings.stop_power_w)
+            start_count = st.number_input("Start confirmation samples", min_value=1,
+                                          value=settings.start_confirm_samples)
+            stop_count = st.number_input("Stop confirmation samples", min_value=1,
+                                         value=settings.stop_confirm_samples)
+            st.caption("Start requires readings at or above its threshold. Stop requires readings "
+                       "below its threshold. Saved changes apply to future cycles.")
+            save = st.form_submit_button("Save rules", type="primary")
+            restore = st.form_submit_button("Restore kettle defaults")
+        if save or restore:
+            proposed = CycleDetectionSettings.simulation_defaults() if restore else (
+                settings.model_copy(update={
+                    "start_power_w": start, "stop_power_w": stop,
+                    "start_confirm_samples": start_count, "stop_confirm_samples": stop_count,
+                })
+            )
+            selected_name = "Electric kettle" if restore else (
+                custom_name if appliance == "Custom" else appliance
+            )
+            try:
+                revision = store.save_appliance_rule(device, profile, selected_name, proposed)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.success(f"{selected_name} rules saved for future cycles · {revision}")
+
+
 def render_reports() -> None:
     st.header("Reports")
 
@@ -261,6 +325,7 @@ def render_reports() -> None:
         st.error("Report validation failed. Invalid history was not displayed.")
 
 st.title("Energy Monitor")
+render_owner_cycle_settings()
 source_options = {
     "Sensor-mode records": "sensor", "Simulated test records": "simulated",
     "Manual entries": "manual", "Unverified / mixed": "unverified", "All records": "all",
@@ -339,9 +404,11 @@ elif st.session_state.mode == "Cycles":
             monthly_usage_context(),
         )
         render_cycle_receipt(detail)
+        rule_name, rule = store.cycle_rule(detail.summary.detection_version)
         if detail.readings:
+            st.caption(f"Cycle rules: {rule_name} · {detail.summary.detection_version}")
             render_resettable_chart(
-                build_cycle_figure(detail, start_threshold_w=1000.0),
+                build_cycle_figure(detail, start_threshold_w=rule.start_power_w),
                 chart_key="cycle_detail_chart",
             )
             for metric in ("Voltage", "Current"):
@@ -358,8 +425,8 @@ elif st.session_state.mode == "Cycles":
         if detail.summary.data_origin == "sensor":
             selected_cycle = store.fetch_cycle(detail.summary.cycle_id)
             if selected_cycle is not None:
-                st.subheader("Isolation Forest — Experimental")
-                render_experimental_assessment(selected_cycle, store)
+                st.subheader("Rolling power comparison")
+                render_cycle_assessment(selected_cycle, store)
         render_tariff_disclosure(
             detail.tariff_estimate,
             detail.energy_label,

@@ -118,6 +118,13 @@ class SQLiteTelemetryStore:
                     effective_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS appliance_rule_versions (
+                    version TEXT PRIMARY KEY REFERENCES cycle_detection_versions(version),
+                    device_id TEXT NOT NULL,
+                    profile_id TEXT NOT NULL,
+                    appliance_name TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS appliance_cycles (
                     cycle_id TEXT PRIMARY KEY,
                     device_id TEXT NOT NULL,
@@ -406,6 +413,115 @@ class SQLiteTelemetryStore:
         fields = TelemetryReading.model_fields
         return TelemetryReading.model_validate({name: row[name] for name in fields})
 
+    def save_appliance_rule(
+        self, device_id: str, profile_id: str, appliance_name: str,
+        settings: CycleDetectionSettings, *, effective_at: datetime | None = None,
+    ) -> str:
+        """Store a prospectively effective policy for one explicit telemetry stream."""
+        if not 0 < settings.stop_power_w < settings.start_power_w <= 25_000:
+            raise ValueError("The stop threshold must be positive and below the start threshold.")
+        if not 1 <= len(appliance_name.strip()) <= 64:
+            raise ValueError("An appliance name of 1–64 characters is required.")
+        effective = effective_at or datetime.now(UTC)
+        if effective.tzinfo is None:
+            raise ValueError("Settings effective time must include a timezone.")
+        effective = effective.astimezone(UTC)
+        version = "appliance-" + uuid4().hex
+        settings = CycleDetectionSettings.model_validate({
+            **settings.model_dump(), "version": version,
+        })
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            latest = connection.execute(
+                """SELECT max(timestamp) FROM telemetry
+                   WHERE device_id = ? AND profile_id = ?""", (device_id, profile_id),
+            ).fetchone()[0]
+            if latest is None:
+                raise ValueError("The selected telemetry stream has no recorded readings.")
+            if effective <= datetime.fromisoformat(latest):
+                raise ValueError("Settings must take effect after the last recorded reading.")
+            previous = connection.execute(
+                """SELECT max(v.effective_at) FROM appliance_rule_versions AS r
+                   JOIN cycle_detection_versions AS v USING (version)
+                   WHERE r.device_id = ? AND r.profile_id = ?""", (device_id, profile_id),
+            ).fetchone()[0]
+            if previous and effective <= datetime.fromisoformat(previous):
+                raise ValueError("Settings must follow the previous saved revision.")
+            connection.execute(
+                """INSERT INTO cycle_detection_versions
+                   VALUES (?, ?, 'simulation_default', ?)""",
+                (version, settings.model_dump_json(), effective.isoformat()),
+            )
+            connection.execute(
+                "INSERT INTO appliance_rule_versions VALUES (?, ?, ?, ?)",
+                (version, device_id, profile_id, appliance_name.strip()),
+            )
+        return version
+
+    def cycle_rule(self, version: str) -> tuple[str, CycleDetectionSettings]:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT r.appliance_name, v.settings_json FROM appliance_rule_versions AS r
+                   JOIN cycle_detection_versions AS v USING (version) WHERE version = ?""",
+                (version,),
+            ).fetchone()
+        if row is None:
+            return "Electric kettle", CycleDetectionSettings.simulation_defaults()
+        return row[0], CycleDetectionSettings.model_validate_json(row[1])
+
+    def active_appliance_rule(
+        self, device_id: str, profile_id: str, as_of: datetime,
+    ) -> tuple[str, CycleDetectionSettings]:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT r.appliance_name, v.settings_json FROM appliance_rule_versions AS r
+                   JOIN cycle_detection_versions AS v USING (version)
+                   WHERE r.device_id = ? AND r.profile_id = ? AND v.effective_at <= ?
+                   ORDER BY v.effective_at DESC LIMIT 1""",
+                (device_id, profile_id, as_of.astimezone(UTC).isoformat()),
+            ).fetchone()
+        if row is None:
+            return "Electric kettle", CycleDetectionSettings.simulation_defaults()
+        return row[0], CycleDetectionSettings.model_validate_json(row[1])
+
+    def telemetry_scopes(self) -> list[tuple[str, str]]:
+        with closing(self._connect()) as connection:
+            return [tuple(row) for row in connection.execute(
+                "SELECT DISTINCT device_id, profile_id FROM telemetry ORDER BY 1, 2"
+            ).fetchall()]
+
+    def restore_appliance_rules(self, rows: list[dict]) -> None:
+        """Cache immutable cloud rules before processing the affected telemetry."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for row in rows:
+                settings = CycleDetectionSettings.model_validate(row["settings"])
+                version = row["version"]
+                effective = datetime.fromisoformat(row["effective_at"])
+                if (settings.version != version or effective.tzinfo is None
+                        or not 0 < settings.stop_power_w < settings.start_power_w <= 25_000
+                        or not re.fullmatch(r"appliance-[0-9a-f]{32}", version)):
+                    raise ValueError("Cloud appliance rule is invalid.")
+                effective_iso = effective.astimezone(UTC).isoformat()
+                entry = (version, row["device_id"], row["profile_id"], row["appliance_name"])
+                current = connection.execute(
+                    """SELECT r.version, r.device_id, r.profile_id, r.appliance_name,
+                       v.settings_json, v.effective_at FROM appliance_rule_versions AS r
+                       JOIN cycle_detection_versions AS v USING (version) WHERE version = ?""",
+                    (version,),
+                ).fetchone()
+                if current:
+                    if (tuple(current[:4]) != entry or current[5] != effective_iso
+                            or CycleDetectionSettings.model_validate_json(current[4]) != settings):
+                        raise ValueError("Cloud appliance rule changed after publication.")
+                    continue
+                connection.execute(
+                    """INSERT INTO cycle_detection_versions
+                       VALUES (?, ?, 'simulation_default', ?)""",
+                    (version, settings.model_dump_json(), effective_iso),
+                )
+                connection.execute("INSERT INTO appliance_rule_versions VALUES (?, ?, ?, ?)", entry)
+
     def process_cycles(
         self, settings: CycleDetectionSettings, *, observed_at: datetime | None = None
     ) -> list[CycleSummary]:
@@ -418,10 +534,21 @@ class SQLiteTelemetryStore:
                 item = self._reading_from_row(row)
                 grouped[(item.device_id, item.profile_id)].append(item)
 
+            revision_rows = connection.execute(
+                """SELECT r.device_id, r.profile_id, v.settings_json, v.effective_at
+                   FROM appliance_rule_versions AS r
+                   JOIN cycle_detection_versions AS v USING (version)"""
+            ).fetchall()
+            revisions = defaultdict(list)
+            policies = {settings.version: settings}
+            for device, profile, value, effective in revision_rows:
+                revision = CycleDetectionSettings.model_validate_json(value)
+                revisions[(device, profile)].append((datetime.fromisoformat(effective), revision))
+                policies[revision.version] = revision
             cycles = [
                 cycle
-                for readings in grouped.values()
-                for cycle in detect_cycles(readings, settings)
+                for scope, readings in grouped.items()
+                for cycle in detect_cycles(readings, settings, revisions=revisions.get(scope, ()))
             ]
             connection.execute(
                 """
@@ -438,12 +565,14 @@ class SQLiteTelemetryStore:
             )
             for cycle in cycles:
                 values = cycle.model_dump(mode="json")
-                latest = grouped[(cycle.device_id, cycle.profile_id)][-1].timestamp
+                scope = (cycle.device_id, cycle.profile_id)
+                latest = grouped[scope][-1].timestamp
                 end = cycle.ended_at
                 # Suppress old completion banners when importing historical backlog.
                 seen = (
                     observed_at if observed_at and end
-                    and (latest - end).total_seconds() <= settings.terminating_gap_seconds
+                    and (latest - end).total_seconds()
+                    <= policies[cycle.detection_version].terminating_gap_seconds
                     else end if observed_at is None else None
                 )
                 values["completion_seen_at"] = (
@@ -474,9 +603,11 @@ class SQLiteTelemetryStore:
                         END,
                         detection_version = excluded.detection_version,
                         updated_at = CURRENT_TIMESTAMP
+                    WHERE NOT :preserve_terminal OR appliance_cycles.status = 'active'
                     """,
                     {
                         **values,
+                        "preserve_terminal": bool(revisions.get(scope)),
                         "summary_json": cycle.model_dump_json(),
                     },
                 )

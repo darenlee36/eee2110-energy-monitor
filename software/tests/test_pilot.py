@@ -140,45 +140,45 @@ def test_raw_quality_gates_remain_in_force(fault):
         pilot_reference(item)
 
 
-def test_experimental_display_shows_fitted_scores_for_reference_cycles():
+def test_cycle_display_leads_with_rolling_deviation_and_keeps_experimental_scores():
     cycle_template = report_cycle(load_pilot_reference())
     script = f"""
-from dashboard.components import render_experimental_assessment
+from dashboard.components import render_cycle_assessment
 from energy_monitor.pilot import load_pilot_reference
 ref = load_pilot_reference()
 cycle = {cycle_template!r}
 for record in ref['cycles']:
     selected = {{**cycle, **record['features'], 'cycle_id': record['cycle_id']}}
-    render_experimental_assessment(selected, None)
+    render_cycle_assessment(selected, None)
 """
     app = AppTest.from_string(script, default_timeout=10).run()
     assert not app.exception
     values = [m.value for m in app.metric if m.label == "Isolation Forest Anomaly Score"]
     assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
                       "61.00 / 100", "45.43 / 100"]
-    assert [m.label for m in app.metric if m.label.startswith("Rolling power baseline")] == [
-        f"Rolling power baseline · {n} earlier cycles" for n in range(1, 6)
-    ]
+    assert [m.value for m in app.metric if m.label.startswith("Current rolling baseline")] == [
+        "1,862.4 W"
+    ] * 6
+    assert app.metric[0].label == "Power deviation from rolling baseline"
+    assert app.metric[0].value == "-2.7%"
     assert len(app.dataframe) == 6
-    assert all(e.label == "How this anomaly score was calculated" for e in app.expander)
+    assert app.expander[0].label == "How this rolling comparison was calculated"
+    assert app.expander[1].label == "Experimental Isolation Forest details"
     assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)
     assert any("Training-reference cycle" in c.value for c in app.caption)
 
 
-def test_score_explanation_distinguishes_model_threshold_from_feature_review():
-    from dashboard.components import experimental_score_insights
-    from energy_monitor.experimental_if import load_release
+def test_rolling_insights_use_the_same_earlier_cycles_as_the_display():
+    from dashboard.components import rolling_power_insights
+    from energy_monitor.experimental_if import current_rolling_power_comparison, load_release
 
     _, release = load_release()
-    # Use the audited high-voltage cycle and the slightly flagged long run.
-    long_run, _, _, high_power = list(release["assessments"].values())[6:]
-    power_messages = " ".join(experimental_score_insights(
-        {"average_voltage_v": 242.446}, high_power, release,
+    high_power = list(release["assessments"].values())[-1]
+    rolling = current_rolling_power_comparison(high_power, release, None)
+    power_messages = " ".join(rolling_power_insights(
+        {"average_voltage_v": 242.446}, rolling,
     ))
-    assert "46.12/100 is 3.88 points below" in power_messages
+    assert "current mean of 10 verified cycles" in power_messages
+    assert "+285.9 W (+15.4%)" in power_messages
     assert "242.4 V" in power_messages
-    assert "feature shift triggered a separate baseline review" in power_messages
-    duration_messages = " ".join(experimental_score_insights({}, long_run, release))
-    assert "50.21/100 is 0.21 points above" in duration_messages
-    assert "Water quantity and starting temperature" in duration_messages
 

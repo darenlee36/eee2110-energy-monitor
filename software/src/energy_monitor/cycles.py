@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from statistics import fmean
 from uuid import UUID, uuid5
 
@@ -157,8 +158,12 @@ def summarize_cycle(
 def detect_cycles(
     readings: Sequence[TelemetryReading],
     settings: CycleDetectionSettings,
+    *,
+    revisions: Sequence[tuple[datetime, CycleDetectionSettings]] = (),
 ) -> list[CycleSummary]:
     ordered = sorted(readings, key=lambda item: (item.timestamp, item.sample_sequence))
+    timeline = iter(sorted(revisions, key=lambda revision: revision[0]))
+    next_revision = next(timeline, None)
     cycles: list[CycleSummary] = []
     candidate_start: list[TelemetryReading] = []
     active: list[TelemetryReading] = []
@@ -194,6 +199,11 @@ def detect_cycles(
             continue
 
         if not active:
+            # An in-flight start confirmation or active cycle keeps its original policy.
+            if not candidate_start:
+                while next_revision is not None and next_revision[0] <= reading.timestamp:
+                    settings = next_revision[1]
+                    next_revision = next(timeline, None)
             if reading.active_power_w >= settings.start_power_w:
                 candidate_start.append(reading)
             else:

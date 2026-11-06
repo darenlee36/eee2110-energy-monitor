@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from energy_monitor.cloud_edits import SupabaseCycleStore
-from energy_monitor.models import ManualCycleRecord
+from energy_monitor.models import CycleDetectionSettings, ManualCycleRecord
 from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.supabase_sync import SupabaseConfig, SupabaseSyncError
 
@@ -17,6 +17,44 @@ def test_public_store_cannot_write(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="Owner login required"):
         store.add_cycle_label("1 litre")
     assert store.list_cycle_labels() == []
+
+
+def test_cloud_rules_are_owner_written_and_survive_fresh_cache(tmp_path, monkeypatch):
+    version = "appliance-" + "a" * 32
+    base = CycleDetectionSettings.simulation_defaults()
+    new = base.model_copy(update={"start_power_w": 30, "stop_power_w": 10})
+    published = []
+
+    def append(url, *, headers, json, timeout):
+        assert url.endswith("/append_intelligence_appliance_rule")
+        assert "version" not in json["p_settings"]
+        published.append({
+            "version": version, "device_id": json["p_device_id"],
+            "profile_id": json["p_profile_id"], "appliance_name": json["p_appliance_name"],
+            "effective_at": "2026-11-06T06:00:00+00:00",
+            "settings": {**json["p_settings"], "version": version},
+        })
+        return httpx.Response(200, json=version, request=httpx.Request("POST", url))
+
+    def read(url, **kwargs):
+        return httpx.Response(200, json=published, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "post", append)
+    monkeypatch.setattr(httpx, "get", read)
+    guest = SupabaseCycleStore(tmp_path / "guest.db", CONFIG)
+    with pytest.raises(ValueError, match="Owner login required"):
+        guest.save_appliance_rule("meter", "tefal-kettle", "Fan", new)
+    assert not published
+    owner = SupabaseCycleStore(tmp_path / "owner.db", CONFIG, can_edit=True)
+    assert owner.save_appliance_rule("meter", "tefal-kettle", "Fan", new) == version
+    guest.refresh_appliance_rules()
+    guest.refresh_appliance_rules()
+    name, loaded = guest.cycle_rule(version)
+    assert (name, loaded.start_power_w, loaded.stop_power_w) == ("Fan", 30, 10)
+    published[0]["settings"]["start_power_w"] = 60
+    with pytest.raises(SupabaseSyncError, match="verify appliance rules"):
+        guest.refresh_appliance_rules()
+    assert guest.cycle_rule(version)[1].start_power_w == 30
 
 
 def test_manual_record_and_archived_label_survive_fresh_cache(tmp_path, monkeypatch):

@@ -184,10 +184,14 @@ def render_anomaly_assessment(report: dict) -> None:
     st.caption("Data provenance: " + ", ".join(sources))
 
 
-def render_experimental_assessment(
+def render_cycle_assessment(
     cycle: dict, store: SQLiteTelemetryStore | None,
-) -> tuple[dict, dict, dict | None] | None:
-    from energy_monitor.experimental_if import assess_selected_cycle, rolling_power_comparison
+) -> dict | None:
+    from energy_monitor.experimental_if import (
+        assess_selected_cycle,
+        current_rolling_power_comparison,
+        rolling_power_comparison,
+    )
 
     try:
         row, release = assess_selected_cycle(cycle, store)
@@ -198,54 +202,73 @@ def render_experimental_assessment(
         st.info("Not Evaluated. The experimental model or cycle evidence is unavailable.")
         return
 
-    model = release["model"]
-    st.metric("Isolation Forest Anomaly Score", f"{row['score']:.2f} / 100")
-    assessment = "Outside" if row["raw_decision"] < 0 else "Within"
-    st.write(f"{assessment} the experimental model threshold")
-    role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
-    st.caption(
-        f"{role} · {len(model['training_cycle_ids'])} frozen training cycles · "
-        f"{model['model_version']} · {model['artifact_sha256'][:12]}"
-    )
     rolling = None
     try:
-        rolling = rolling_power_comparison(row, release, store)
+        rolling = current_rolling_power_comparison(row, release, store)
     except (ValueError, KeyError, TypeError):
-        st.caption("Prior cycle average is currently unavailable.")
+        st.caption("The current rolling baseline is unavailable.")
     else:
         if rolling is not None:
+            power = row["features"]["average_power_w"]
+            mean = rolling["mean_power_w"]
+            change_pct = 100 * rolling["power_change_w"] / mean
+            st.metric("Power deviation from rolling baseline", f"{change_pct:+.1f}%")
             st.metric(
-                f"Rolling power baseline · {rolling['cycle_count']} earlier cycles",
-                f"{rolling['mean_power_w']:,.1f} W",
+                f"Current rolling baseline · {rolling['cycle_count']} eligible cycles",
+                f"{mean:,.1f} W",
             )
-            st.caption("Each earlier Complete cycle with a verified sensor trace contributes "
-                       f"once. Baseline version {rolling['version']}.")
+            with st.expander("How this rolling comparison was calculated"):
+                st.write(
+                    f"The current baseline averages the measured mean power of "
+                    f"{rolling['cycle_count']} Complete cycles with verified sensor readings. "
+                    "Each eligible cycle contributes once, including the selected cycle "
+                    f"when it qualifies. This cycle averaged {power:,.1f} W."
+                )
+                st.markdown(
+                    f"`({power:,.1f} W − {mean:,.1f} W) ÷ {mean:,.1f} W × 100 "
+                    f"= {change_pct:+.1f}%`"
+                )
+                st.caption(f"Baseline version {rolling['version']}.")
+                try:
+                    original = rolling_power_comparison(row, release, store)
+                except (ValueError, KeyError, TypeError):
+                    original = None
+                if original is not None:
+                    st.caption(
+                        f"Original comparison · {original['cycle_count']} earlier cycles · "
+                        f"{original['mean_power_w']:,.1f} W · {original['version']}."
+                    )
         else:
-            st.caption("No earlier verified Complete cycles are available for comparison.")
+            st.caption("No verified Complete cycles are available for comparison.")
     measurements = [
         ("Duration", row["features"]["duration_seconds"], "duration_seconds", "s"),
         ("Mean active power", row["features"]["average_power_w"], "average_power_w", "W"),
         ("Meter energy", row["energy_kwh"], "energy_kwh", "kWh"),
     ]
-    st.dataframe([{
-        "Measurement": label, "Cycle": f"{value:.3f} {unit}",
-        "Reference median": f"{release['statistics'][key]['median']:.3f} {unit}",
-    } for label, value, key, unit in measurements], hide_index=True, width="stretch")
-    feature = max(("duration_seconds", "average_power_w"), key=lambda key: abs(
-        row["features"][key] / release["statistics"][key]["median"] - 1
-    ))
-    delta = 100 * (row["features"][feature] / release["statistics"][feature]["median"] - 1)
-    feature_name = "Duration" if feature == "duration_seconds" else "Mean active power"
-    st.caption(f"{feature_name} differs most from the reference median ({delta:+.1f}%).")
-    st.caption({
-        "frozen_reference": "This cycle contributes to the frozen training reference.",
-        "pending_review": "Baseline update pending independent review.",
-        "quarantined_unusual": "Held for review because the model flagged this observation.",
-        "quarantined_reference_shift": "Held for review because a feature shifted substantially.",
-    }[row["learning_disposition"]])
-    st.caption("Higher scores indicate greater model unusualness. Independent detection accuracy "
-               "has yet to be established. The score does not estimate fault probability.")
-    with st.expander("How this anomaly score was calculated"):
+    with st.expander("Experimental Isolation Forest details"):
+        model = release["model"]
+        st.metric("Isolation Forest Anomaly Score", f"{row['score']:.2f} / 100")
+        assessment = "Outside" if row["raw_decision"] < 0 else "Within"
+        st.write(f"{assessment} the experimental model threshold")
+        role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
+        st.caption(
+            f"{role} · {len(model['training_cycle_ids'])} frozen training cycles · "
+            f"{model['model_version']} · {model['artifact_sha256'][:12]}"
+        )
+        st.dataframe([{
+            "Measurement": label, "Cycle": f"{value:.3f} {unit}",
+            "Training reference median": f"{release['statistics'][key]['median']:.3f} {unit}",
+        } for label, value, key, unit in measurements], hide_index=True, width="stretch")
+        st.caption({
+            "frozen_reference": "This cycle contributes to the frozen training reference.",
+            "pending_review": "Training eligibility awaits independent review.",
+            "quarantined_unusual": "Held for review because the model flagged this observation.",
+            "quarantined_reference_shift": (
+                "Held for review because a feature shifted substantially."
+            ),
+        }[row["learning_disposition"]])
+        st.caption("Higher scores indicate greater model unusualness. Independent detection "
+                   "accuracy has yet to be established.")
         st.markdown(
             f"1. Use **{row['features']['duration_seconds']:g} s** of cycle duration and "
             f"**{row['features']['average_power_w']:,.1f} W** of sampled mean active power."
@@ -262,52 +285,20 @@ def render_experimental_assessment(
         )
         st.caption(f"Decision function {row['raw_decision']:+.9f} · Cutoff 50 · "
                    f"Mapping {release['score_mapping']}. Energy is shown separately.")
-    return row, release, rolling
+    return rolling
 
 
-def experimental_score_insights(
-    cycle: dict, row: dict, release: dict, rolling: dict | None = None,
-) -> list[str]:
-    """Explain the displayed score using the same assessment and its reference."""
-    score = row["score"]
-    distance = abs(score - 50)
-    position = ("at the cutoff" if distance < .005 else
-                f"{distance:.2f} points {'above' if score > 50 else 'below'} the cutoff")
-    duration = row["features"]["duration_seconds"]
-    power = row["features"]["average_power_w"]
-    reference = release["statistics"]
-    duration_median = reference["duration_seconds"]["median"]
-    power_median = reference["average_power_w"]["median"]
-    result = [
-        f"{score:.2f}/100 is {position} of 50. "
-        "Higher scores mean the model isolated the cycle more readily. "
-        "The scale measures relative unusualness rather than fault probability.",
-        f"This cycle took {duration:g} s versus a {duration_median:g} s median "
-        f"and averaged {power:,.0f} W versus a {power_median:,.0f} W median.",
+def rolling_power_insights(cycle: dict, rolling: dict) -> list[str]:
+    mean = rolling["mean_power_w"]
+    delta = rolling["power_change_w"]
+    voltage = cycle.get("average_voltage_v")
+    context = f" The recorded mean voltage was {voltage:.1f} V." if voltage else ""
+    return [
+        f"Compared with the current mean of {rolling['cycle_count']} verified cycles, "
+        f"this cycle's mean power changed by {delta:+,.1f} W ({100 * delta / mean:+.1f}%).",
+        "Supply voltage or a different load can affect mean power."
+        f"{context} Compare the voltage and power traces with a similar run.",
     ]
-    if rolling is not None:
-        mean = rolling["mean_power_w"]
-        delta = rolling["power_change_w"]
-        result.append(
-            f"Compared with the {rolling['cycle_count']} earlier verified cycles, "
-            f"this cycle drew {delta:+,.1f} W ({100 * delta / mean:+.1f}%) on average. "
-            "Each cycle contributes equally to that rolling comparison."
-        )
-    if row["learning_disposition"] == "quarantined_reference_shift":
-        result.append("A large measured feature shift triggered a separate baseline review. "
-                      "That review applies even when the score is below 50.")
-    if abs(power / power_median - 1) >= abs(duration / duration_median - 1):
-        voltage = cycle.get("average_voltage_v")
-        context = f" The recorded mean voltage was {voltage:.1f} V." if voltage else ""
-        result.append("A supply-voltage change or a different load can change mean power."
-                      f"{context} Compare the voltage and power traces with a similar run.")
-    else:
-        result.append("Water quantity and starting temperature can change heating time. "
-                      "Compare runs at the same recorded volume and starting conditions.")
-    if score > 50:
-        result.append("Review both traces before repeating the run. If the difference persists "
-                      "under comparable conditions, investigate the appliance and supply.")
-    return result
 
 
 def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = None) -> None:
@@ -415,20 +406,20 @@ def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = N
             "No saved reading trace available. "
             "Older/manual reports retain their recorded summary only."
         )
-    st.subheader("Isolation Forest — Experimental")
-    # A saved report's selected cycle owns both the score and the insights.
+    st.subheader("Rolling power comparison")
+    # Use the label belonging to the saved report's selected cycle.
     score_cycle = cycle
     if store is not None and (cached := store.fetch_cycle(cycle["cycle_id"])):
         scope_keys = ("device_id", "profile_id", "start_sequence", "end_sequence",
                       "status", "detection_version")
         if all(cached.get(k) == cycle.get(k) for k in scope_keys):
             score_cycle = {**cycle, "custom_label": cached.get("custom_label")}
-    assessed = render_experimental_assessment(score_cycle, store)
+    rolling = render_cycle_assessment(score_cycle, store)
     st.subheader("Insights & next steps")
-    if assessed:
+    if rolling is not None:
         with st.container(border=True):
-            st.markdown("#### How to read this anomaly score")
-            for message in experimental_score_insights(cycle, *assessed):
+            st.markdown("#### How this cycle compares with the current baseline")
+            for message in rolling_power_insights(cycle, rolling):
                 st.write(message)
     if report["engine"] == "codex" and report["status"] == "generated":
         st.info("DISCLAIMER · This saved report includes constrained AI-assisted interpretation. "
@@ -608,6 +599,8 @@ def render_live_state(view: LiveView, store: SQLiteTelemetryStore) -> None:
         st.caption(f"Source: {REPORT_SOURCES[origin][0]}")
     with st.expander("Technical details"):
         st.text(f"Monitor: {latest.device_id} · Profile: {latest.profile_id}")
+        st.caption(f"Selected cycle rules: {view.appliance_rule_name} · "
+                   f"Start {view.start_threshold_w:g} W")
         st.text(f"Firmware: {latest.firmware_version} · Source: {REPORT_SOURCES[origin][0]}")
         st.caption("Sensor mode does not establish calibration. "
                    "Monitor IDs can be reused across sensor and simulation runs.")
@@ -624,7 +617,7 @@ def render_live_state(view: LiveView, store: SQLiteTelemetryStore) -> None:
         f"{view.latest_current_a or 0:.3f} A")
 
     render_resettable_chart(
-        build_live_power_figure(view, start_threshold_w=1000.0),
+        build_live_power_figure(view, start_threshold_w=view.start_threshold_w),
         chart_key="live_power_chart",
     )
     with st.container(key="live-electrical-pair"):

@@ -16,7 +16,6 @@ from energy_monitor.metrics import derive_connection_state
 from energy_monitor.models import (
     ConnectionState,
     CycleAssessment,
-    CycleDetectionSettings,
     CycleStatus,
     CycleSummary,
     QualityStatus,
@@ -72,6 +71,8 @@ class LiveView(BaseModel):
     cycle_readings: list[TelemetryReading]
     active_cycle: CycleSummary | None
     last_cycle: CycleListItem | None
+    start_threshold_w: float = 1000.0
+    appliance_rule_name: str = "Electric kettle"
 
 
 class CycleDetail(BaseModel):
@@ -272,6 +273,10 @@ def get_live_view(
         None,
     )
     active = None if active_row is None else _summary_from_row(active_row)
+    rule_name, rule = (
+        store.cycle_rule(active.detection_version) if active is not None
+        else store.active_appliance_rule(latest.device_id, latest.profile_id, latest.timestamp)
+    )
     completed_row = next(
         (row for row in cycle_rows if row["status"] == CycleStatus.COMPLETED.value),
         None,
@@ -298,7 +303,7 @@ def get_live_view(
              if r.timestamp >= active.started_at and r.quality_status is QualityStatus.VALID),
             None,
         )
-        stop_power = CycleDetectionSettings.simulation_defaults().stop_power_w
+        stop_power = rule.stop_power_w
         state = "finalizing" if valid_tail and valid_tail.active_power_w < stop_power else "heating"
     elif (
         completed_row is not None
@@ -349,6 +354,8 @@ def get_live_view(
         cycle_readings=cycle_readings,
         active_cycle=active,
         last_cycle=last_cycle,
+        start_threshold_w=rule.start_power_w,
+        appliance_rule_name=rule_name,
     )
 
 

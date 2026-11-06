@@ -249,8 +249,28 @@ def rolling_power_comparison(row: dict, release: dict, store) -> dict | None:
     )}
 
 
-def _validate_rolling_reference(reference: dict | None) -> None:
-    if not isinstance(reference, dict) or reference.get("version") != ROLLING_POWER_VERSION:
+def current_rolling_power_comparison(row: dict, release: dict, store) -> dict | None:
+    frozen = release["assessments"]
+    if hasattr(store, "fetch_current_rolling_power"):
+        result = store.fetch_current_rolling_power(row["cycle_id"], list(frozen))
+    else:
+        powers = [prior["features"]["average_power_w"] for prior in frozen.values()]
+        result = {"cycle_count": len(powers), "mean_power_w": (
+            statistics.fmean(powers) if powers else None
+        )}
+    reference = {**result, "version": "current-rolling-power-v1"}
+    _validate_rolling_reference(reference, version="current-rolling-power-v1")
+    if reference["cycle_count"] == 0:
+        return None
+    return {**reference, "power_change_w": (
+        row["features"]["average_power_w"] - reference["mean_power_w"]
+    )}
+
+
+def _validate_rolling_reference(
+    reference: dict | None, *, version: str = ROLLING_POWER_VERSION,
+) -> None:
+    if not isinstance(reference, dict) or reference.get("version") != version:
         raise ValueError("A saved rolling comparison is unavailable.")
     count, mean = reference.get("cycle_count"), reference.get("mean_power_w")
     if type(count) is not int or count < 0:

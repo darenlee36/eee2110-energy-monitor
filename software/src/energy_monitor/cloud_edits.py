@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 
-from energy_monitor.models import CycleSummary, ManualCycleRecord
+from energy_monitor.models import CycleDetectionSettings, CycleSummary, ManualCycleRecord
 from energy_monitor.reporting import ReportDraft, build_report, validate_report
 from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.supabase_sync import SupabaseConfig, SupabaseSyncError
@@ -147,6 +148,14 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
             raise ValueError("Prior cycle average is unavailable.")
         return result
 
+    def fetch_current_rolling_power(self, cycle_id: str, frozen_ids: list[str]) -> dict:
+        result = self._rpc("read_intelligence_current_power", {
+            "p_cycle_id": str(UUID(cycle_id)), "p_frozen_ids": frozen_ids,
+        })
+        if not isinstance(result, dict):
+            raise ValueError("Current cycle average is unavailable.")
+        return result
+
     @staticmethod
     def _decode_first_assessment(value: object) -> dict:
         if isinstance(value, str):
@@ -154,6 +163,39 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
             if isinstance(parsed, dict):
                 return parsed
         raise ValueError("Invalid cloud first-score receipt.")
+
+    def refresh_appliance_rules(self) -> None:
+        try:
+            result = httpx.get(
+                f"{self.config.url}/rest/v1/intelligence_appliance_rules",
+                headers={"apikey": self.config.service_role_key},
+                params={"select": "*", "order": "effective_at,version", "limit": "1000"},
+                timeout=15,
+            )
+            result.raise_for_status()
+            rows = result.json()
+            if not isinstance(rows, list) or len(rows) >= 1000:
+                raise ValueError("Cloud appliance rule history is invalid or incomplete.")
+            self.restore_appliance_rules(rows)
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            raise SupabaseSyncError("Could not verify appliance rules.") from exc
+
+    def save_appliance_rule(
+        self, device_id: str, profile_id: str, appliance_name: str,
+        settings: CycleDetectionSettings, *, effective_at: datetime | None = None,
+    ) -> str:
+        if not self.can_edit:
+            raise ValueError("Owner login required to save appliance rules.")
+        if effective_at is not None:
+            raise ValueError("The server assigns the effective time of cloud rules.")
+        version = self._rpc("append_intelligence_appliance_rule", {
+            "p_device_id": device_id, "p_profile_id": profile_id,
+            "p_appliance_name": appliance_name,
+            "p_settings": settings.model_dump(mode="json", exclude={"version"}),
+        })
+        if not isinstance(version, str) or not re.fullmatch(r"appliance-[0-9a-f]{32}", version):
+            raise ValueError("Cloud appliance rule confirmation is invalid.")
+        return version
 
     def _edit(self, operation: str, payload: dict[str, object]) -> object:
         if not self.can_edit:

@@ -393,6 +393,32 @@ def test_reports_empty_history_and_no_generation_on_refresh(tmp_path, monkeypatc
     assert SQLiteTelemetryStore(database).fetch_reports() == []
 
 
+def test_local_appliance_rules_require_owner_password_and_save_future_revision(
+    tmp_path, monkeypatch,
+):
+    database = build_dashboard_cycle_database(tmp_path)
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "local")
+    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "local-test-owner")
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10).run()
+    assert not any(b.label == "Save rules" for b in app.button)
+    next(i for i in app.text_input if i.label == "Owner password").set_value("wrong").run()
+    assert not any(b.label == "Save rules" for b in app.button)
+    next(i for i in app.text_input if i.label == "Owner password").set_value(
+        "local-test-owner"
+    ).run()
+    next(s for s in app.selectbox if s.label == "Appliance").select("Fan")
+    next(i for i in app.number_input if i.label == "Start threshold (W)").set_value(30.0)
+    next(i for i in app.number_input if i.label == "Stop threshold (W)").set_value(10.0)
+    next(b for b in app.button if b.label == "Save rules").click().run()
+    assert not app.exception
+    store = SQLiteTelemetryStore(database)
+    name, rules = store.active_appliance_rule(
+        *store.telemetry_scopes()[0], datetime.now(UTC) + timedelta(seconds=1),
+    )
+    assert (name, rules.start_power_w, rules.stop_power_w) == ("Fan", 30.0, 10.0)
+
+
 def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypatch):
     database = build_dashboard_cycle_database(tmp_path)
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))

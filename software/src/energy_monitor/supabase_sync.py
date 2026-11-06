@@ -115,6 +115,9 @@ def sync_supabase_telemetry(
             )
             accepted += 0 if result.replayed else result.accepted
     if rows:
+        refresh_rules = getattr(store, "refresh_appliance_rules", None)
+        if refresh_rules is not None:
+            refresh_rules()
         # Reprocess before advancing, including recovery after an interrupted import.
         store.process_cycles(
             CycleDetectionSettings.simulation_defaults(), observed_at=datetime.now(UTC)
