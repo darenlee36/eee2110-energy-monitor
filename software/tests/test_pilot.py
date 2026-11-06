@@ -140,25 +140,22 @@ def test_raw_quality_gates_remain_in_force(fault):
         pilot_reference(item)
 
 
-def test_preview_shows_six_real_scores_and_preserves_unavailable_ml():
+def test_experimental_display_shows_fitted_scores_for_reference_cycles():
     cycle_template = report_cycle(load_pilot_reference())
     script = f"""
-from dashboard.components import render_anomaly_assessment
+from dashboard.components import render_experimental_assessment
 from energy_monitor.pilot import load_pilot_reference
 ref = load_pilot_reference()
 cycle = {cycle_template!r}
 for record in ref['cycles']:
     selected = {{**cycle, **record['features'], 'cycle_id': record['cycle_id']}}
-    report = {{'evidence_snapshot': {{'model': {{'status': 'not_trained'}},
-        'source_counts': {{'sensor': 1}}, 'cycles': [selected]}}}}
-    render_anomaly_assessment(report)
+    render_experimental_assessment(selected, None)
 """
     app = AppTest.from_string(script).run()
     assert not app.exception
     values = [m.value for m in app.metric]
-    assert values[::2] == ["Unavailable"] * 6
-    assert values[1::2] == ["35.4 / 100", "5.2 / 100", "5.9 / 100", "20.5 / 100",
-                          "57.1 / 100", "16.5 / 100"]
-    assert len(app.expander) == 6
-    assert any("Not Evaluated" in c.value for c in app.caption)
+    assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
+                      "61.00 / 100", "45.43 / 100"]
+    assert len(app.dataframe) == 6
+    assert any("Training-reference cycle" in c.value for c in app.caption)
 

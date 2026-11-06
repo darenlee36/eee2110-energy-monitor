@@ -18,6 +18,7 @@ from components import (
     render_cycle_filters,
     render_cycle_history,
     render_cycle_receipt,
+    render_experimental_assessment,
     render_live_state,
     render_manual_cycle_entry,
     render_report_dashboard,
@@ -188,6 +189,14 @@ def render_reports() -> None:
         cycles = [c for c in store.fetch_report_cycles(profile, device)
                   if matches_source(c.get("data_origin", "unknown"),
                                     c.get("record_source", "measured"), source_filter)]
+        if cycles:
+            st.subheader("Isolation Forest — Experimental")
+            scored_cycles = {c["cycle_id"]: c for c in cycles}
+            scored_id = st.selectbox(
+                "Cycle to assess", list(scored_cycles),
+                format_func=lambda cid: format_myt(scored_cycles[cid]["started_at"]),
+            )
+            render_experimental_assessment(scored_cycles[scored_id], store)
         selected_report = None
         if can_edit and cycles:
             with st.expander("Generate template report", expanded=True):
@@ -245,15 +254,9 @@ def render_reports() -> None:
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
                    f"{format_myt(report['period_end'])}")
         render_report_dashboard(report)
-        st.subheader("Anomaly assessment")
-        render_anomaly_assessment(report)
-        with st.expander("Preview the score display"):
-            if st.toggle("Show sample score (demo only)", key="report_sample_score"):
-                st.warning("Demo only — not calculated from this cycle. Not a fault probability.")
-                sample = st.slider("Illustrative score", 0, 100, 72, key="report_sample_value")
-                st.metric("Sample score — not this cycle", f"{sample} / 100")
-                st.progress(sample / 100, text="Sample scale: 0 = less unusual; 100 = more unusual")
         with st.expander("Technical details and saved evidence"):
+            st.markdown("**Model evidence at report generation**")
+            render_anomaly_assessment(report)
             st.caption(
                 f"Source: {sources} · Engine: {report['engine']} · Status: {report['status']}"
             )
@@ -360,6 +363,11 @@ elif st.session_state.mode == "Cycles":
             can_edit or isinstance(store, SupabaseCycleStore)
         ):
             render_cycle_annotation(store, detail.summary.cycle_id)
+        if detail.summary.data_origin == "sensor":
+            selected_cycle = store.fetch_cycle(detail.summary.cycle_id)
+            if selected_cycle is not None:
+                st.subheader("Isolation Forest — Experimental")
+                render_experimental_assessment(selected_cycle, store)
         render_tariff_disclosure(
             detail.tariff_estimate,
             detail.energy_label,

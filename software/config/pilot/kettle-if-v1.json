@@ -1,0 +1,492 @@
+{
+  "schema_version": 1,
+  "score_mapping": "negative-score-samples-times-100-v1",
+  "model": {
+    "schema_version": 1,
+    "model_version": "pilot-if-two-features-v1",
+    "status": "experimental_in_sample_only",
+    "validated": false,
+    "production_activation": false,
+    "feature_version": "duration-measured-power-v1",
+    "feature_names": [
+      "duration_seconds",
+      "average_power_w"
+    ],
+    "sklearn_version": "1.9.1",
+    "settings": {
+      "n_estimators": 200,
+      "max_samples": 6,
+      "contamination": "auto",
+      "random_state": 42,
+      "n_jobs": 1
+    },
+    "training_reference": {
+      "schema_version": 1,
+      "algorithm": "pilot-deviation-v1",
+      "feature_version": "duration-measured-power-v1",
+      "baseline_id": "pilot-deviation-v1-f1f5564e68e2",
+      "profile_id": "tefal-kettle",
+      "device_scope_sha256": "ef802dd96372a66e55390d3b2c26886e3332dcb01c44a71523a59ec358b3afb2",
+      "reference_date": "2026-11-05",
+      "source": "Supabase sensor cycle summaries",
+      "source_reference_sha256": "f1f5564e68e2dd94176d53c77402114993fef90bfbacf7429427dc173c05e543",
+      "annotation_eligibility": "Complete",
+      "independently_reviewed": false,
+      "parameters": {
+        "duration_seconds": {
+          "median": 220.5,
+          "mad": 15.0,
+          "scale": 22.238999999999997,
+          "weight": 0.7
+        },
+        "average_power_w": {
+          "median": 1801.2951443829115,
+          "mad": 16.863833333333332,
+          "scale": 50.0,
+          "weight": 0.3
+        }
+      },
+      "cycles": [
+        {
+          "cycle_id": "738846fd-7d49-5512-881b-4870a9c716af",
+          "started_at": "2026-11-05T05:14:38Z",
+          "features": {
+            "duration_seconds": 189.0,
+            "average_power_w": 1812.8421875
+          },
+          "energy_kwh": 0.097,
+          "sample_count": 64
+        },
+        {
+          "cycle_id": "cea72ced-16e7-53db-8126-5c0e7f41be18",
+          "started_at": "2026-11-05T05:26:53Z",
+          "features": {
+            "duration_seconds": 222.0,
+            "average_power_w": 1783.3573333333331
+          },
+          "energy_kwh": 0.111,
+          "sample_count": 75
+        },
+        {
+          "cycle_id": "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62",
+          "started_at": "2026-11-05T05:41:41Z",
+          "features": {
+            "duration_seconds": 219.0,
+            "average_power_w": 1823.0743243243244
+          },
+          "energy_kwh": 0.113,
+          "sample_count": 74
+        },
+        {
+          "cycle_id": "d7bac46d-f049-538b-8ae4-81516fef1b45",
+          "started_at": "2026-11-05T05:52:35Z",
+          "features": {
+            "duration_seconds": 237.0,
+            "average_power_w": 1817.0849999999998
+          },
+          "energy_kwh": 0.122,
+          "sample_count": 80
+        },
+        {
+          "cycle_id": "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c",
+          "started_at": "2026-11-05T06:41:01Z",
+          "features": {
+            "duration_seconds": 174.0,
+            "average_power_w": 1759.677966101695
+          },
+          "energy_kwh": 0.086,
+          "sample_count": 59
+        },
+        {
+          "cycle_id": "c0f4c58e-df45-57db-a502-4e89e7b7527f",
+          "started_at": "2026-11-05T06:51:37Z",
+          "features": {
+            "duration_seconds": 234.0,
+            "average_power_w": 1789.748101265823
+          },
+          "energy_kwh": 0.118,
+          "sample_count": 79
+        }
+      ],
+      "ml_assessment": "not_evaluated",
+      "artifact_sha256": "a3afbe12c5f88f579a429b21f7e92c81c559f53934aee4072014b6ba2bb1b003"
+    },
+    "training_cycle_ids": [
+      "738846fd-7d49-5512-881b-4870a9c716af",
+      "cea72ced-16e7-53db-8126-5c0e7f41be18",
+      "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62",
+      "d7bac46d-f049-538b-8ae4-81516fef1b45",
+      "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c",
+      "c0f4c58e-df45-57db-a502-4e89e7b7527f"
+    ],
+    "in_sample_decisions": [
+      0.01344889028781493,
+      0.05244502348622204,
+      0.04459157101765365,
+      0.04249611554295146,
+      -0.11002442609021712,
+      0.04565720053798894
+    ],
+    "in_sample_raw_scores": [
+      -0.48655110971218507,
+      -0.44755497651377796,
+      -0.45540842898234635,
+      -0.45750388445704854,
+      -0.6100244260902171,
+      -0.45434279946201106
+    ],
+    "independent_validation_cycles": 0,
+    "failure_probability": null,
+    "artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7"
+  },
+  "assessments": {
+    "738846fd-7d49-5512-881b-4870a9c716af": {
+      "cycle_id": "738846fd-7d49-5512-881b-4870a9c716af",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.01344889028781493,
+      "raw_score": -0.48655110971218507,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 189.0,
+        "average_power_w": 1812.8421875
+      },
+      "started_at": "2026-11-05T05:14:38+00:00",
+      "ended_at": "2026-11-05T05:17:47+00:00",
+      "energy_kwh": 0.097,
+      "sample_count": 64,
+      "trace_sha256": "d82fa42cb2f7ac15deffa48c141b82de0e194f45cd6d429ef068f84ecdbed732",
+      "quality": {
+        "sample_count": 64,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.01226718213058418,
+        "maximum_arrival_lag_seconds": 33.872665,
+        "firmware_versions": [
+          "pzem-fw-0.2.6"
+        ]
+      },
+      "score": 48.655110971218505,
+      "frozen_reference_deviation": 35.35945583777084,
+      "learning_disposition": "frozen_reference"
+    },
+    "cea72ced-16e7-53db-8126-5c0e7f41be18": {
+      "cycle_id": "cea72ced-16e7-53db-8126-5c0e7f41be18",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.05244502348622204,
+      "raw_score": -0.44755497651377796,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 222.0,
+        "average_power_w": 1783.3573333333331
+      },
+      "started_at": "2026-11-05T05:26:53+00:00",
+      "ended_at": "2026-11-05T05:30:35+00:00",
+      "energy_kwh": 0.111,
+      "sample_count": 75,
+      "trace_sha256": "60deee33eeb15bd4de5be0c1f77cfe99438d1425bb4cfca1625cf187027d93a1",
+      "quality": {
+        "sample_count": 75,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.004877252252252347,
+        "maximum_arrival_lag_seconds": 46.28007,
+        "firmware_versions": [
+          "pzem-fw-0.2.6"
+        ]
+      },
+      "score": 44.755497651377794,
+      "frozen_reference_deviation": 5.161373982027733,
+      "learning_disposition": "frozen_reference"
+    },
+    "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62": {
+      "cycle_id": "5308a87d-ac0c-5d58-b6ca-60e69a4a7f62",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.04459157101765365,
+      "raw_score": -0.45540842898234635,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 219.0,
+        "average_power_w": 1823.0743243243244
+      },
+      "started_at": "2026-11-05T05:41:41+00:00",
+      "ended_at": "2026-11-05T05:45:20+00:00",
+      "energy_kwh": 0.113,
+      "sample_count": 74,
+      "trace_sha256": "8017339556b9ff98f0409028bdb1c9f54dc463e7e260dd42b5f3ae1e59fb4d32",
+      "quality": {
+        "sample_count": 74,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.01866740412979341,
+        "maximum_arrival_lag_seconds": 52.807105,
+        "firmware_versions": [
+          "pzem-fw-0.2.6"
+        ]
+      },
+      "score": 45.54084289823464,
+      "frozen_reference_deviation": 5.9296477603946265,
+      "learning_disposition": "frozen_reference"
+    },
+    "d7bac46d-f049-538b-8ae4-81516fef1b45": {
+      "cycle_id": "d7bac46d-f049-538b-8ae4-81516fef1b45",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.04249611554295146,
+      "raw_score": -0.45750388445704854,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 237.0,
+        "average_power_w": 1817.0849999999998
+      },
+      "started_at": "2026-11-05T05:52:35+00:00",
+      "ended_at": "2026-11-05T05:56:32+00:00",
+      "energy_kwh": 0.122,
+      "sample_count": 80,
+      "trace_sha256": "53d1cd62319eaa97d422bd028ac318f39f238fe8f3f2220d4656b52192886d03",
+      "quality": {
+        "sample_count": 80,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.015529030054644804,
+        "maximum_arrival_lag_seconds": 20.265537,
+        "firmware_versions": [
+          "pzem-fw-0.2.6"
+        ]
+      },
+      "score": 45.75038844570486,
+      "frozen_reference_deviation": 20.469900616650268,
+      "learning_disposition": "frozen_reference"
+    },
+    "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c": {
+      "cycle_id": "8de7f55d-bb03-561b-b4b0-e398ecc3bb2c",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": -0.11002442609021712,
+      "raw_score": -0.6100244260902171,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 174.0,
+        "average_power_w": 1759.677966101695
+      },
+      "started_at": "2026-11-05T06:41:01+00:00",
+      "ended_at": "2026-11-05T06:43:55+00:00",
+      "energy_kwh": 0.086,
+      "sample_count": 59,
+      "trace_sha256": "6e900eca186affd43202210bd28487eb168483f3e843c1e19e44901f2b5c9541",
+      "quality": {
+        "sample_count": 59,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.00047044573643370514,
+        "maximum_arrival_lag_seconds": 51.331317,
+        "firmware_versions": [
+          "pzem-fw-0.2.7"
+        ]
+      },
+      "score": 61.00244260902171,
+      "frozen_reference_deviation": 57.11160059171706,
+      "learning_disposition": "frozen_reference"
+    },
+    "c0f4c58e-df45-57db-a502-4e89e7b7527f": {
+      "cycle_id": "c0f4c58e-df45-57db-a502-4e89e7b7527f",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.04565720053798894,
+      "raw_score": -0.45434279946201106,
+      "reference_member": true,
+      "classification": "not_evaluated",
+      "evaluation_role": "in_sample",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 234.0,
+        "average_power_w": 1789.748101265823
+      },
+      "started_at": "2026-11-05T06:51:37+00:00",
+      "ended_at": "2026-11-05T06:55:31+00:00",
+      "energy_kwh": 0.118,
+      "sample_count": 79,
+      "trace_sha256": "ef7f6dbb5da5bfaf3bc5b92c691dfdfb8e5abbf554f5b728a4732513d6ece7d8",
+      "quality": {
+        "sample_count": 79,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.011174081920903889,
+        "maximum_arrival_lag_seconds": 43.001901,
+        "firmware_versions": [
+          "pzem-fw-0.2.7"
+        ]
+      },
+      "score": 45.43427994620111,
+      "frozen_reference_deviation": 16.47371457242622,
+      "learning_disposition": "frozen_reference"
+    },
+    "be705728-bd9d-50d4-b56a-8ca0f53e6f0f": {
+      "cycle_id": "be705728-bd9d-50d4-b56a-8ca0f53e6f0f",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": -0.0021115244467789784,
+      "raw_score": -0.502111524446779,
+      "reference_member": false,
+      "classification": "not_evaluated",
+      "evaluation_role": "unvalidated_new_cycle",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 252.0,
+        "average_power_w": 1776.9576470588236
+      },
+      "started_at": "2026-11-06T03:11:17+00:00",
+      "ended_at": "2026-11-06T03:15:29+00:00",
+      "energy_kwh": 0.126,
+      "sample_count": 85,
+      "trace_sha256": "8ea88030c5ebd8dfffaff3f44507c993aed73808937bc9e3beee9de973ab646d",
+      "quality": {
+        "sample_count": 85,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.007956679894179856,
+        "maximum_arrival_lag_seconds": 25.545206,
+        "firmware_versions": [
+          "pzem-fw-0.2.9"
+        ]
+      },
+      "score": 50.2111524446779,
+      "frozen_reference_deviation": 37.917546679170755,
+      "learning_disposition": "quarantined_unusual"
+    },
+    "f1abf945-832a-56fd-9fd6-8ac3ab890561": {
+      "cycle_id": "f1abf945-832a-56fd-9fd6-8ac3ab890561",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.01570030908417719,
+      "raw_score": -0.4842996909158228,
+      "reference_member": false,
+      "classification": "not_evaluated",
+      "evaluation_role": "unvalidated_new_cycle",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 252.0,
+        "average_power_w": 1783.9576470588236
+      },
+      "started_at": "2026-11-06T03:23:50+00:00",
+      "ended_at": "2026-11-06T03:28:02+00:00",
+      "energy_kwh": 0.127,
+      "sample_count": 85,
+      "trace_sha256": "8c7ebe50ae18874f05c09f29d00fc15ae8868ed33607f596e69a8628d150e342",
+      "quality": {
+        "sample_count": 85,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.016161417322834635,
+        "maximum_arrival_lag_seconds": 21.613124,
+        "firmware_versions": [
+          "pzem-fw-0.2.9"
+        ]
+      },
+      "score": 48.42996909158228,
+      "frozen_reference_deviation": 36.517546679170756,
+      "learning_disposition": "pending_review"
+    },
+    "cc70ec25-d01e-592a-9feb-6cc53d296b04": {
+      "cycle_id": "cc70ec25-d01e-592a-9feb-6cc53d296b04",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.018813802680335057,
+      "raw_score": -0.48118619731966494,
+      "reference_member": false,
+      "classification": "not_evaluated",
+      "evaluation_role": "unvalidated_new_cycle",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 234.0,
+        "average_power_w": 2129.020253164557
+      },
+      "started_at": "2026-11-06T03:49:18+00:00",
+      "ended_at": "2026-11-06T03:53:12+00:00",
+      "energy_kwh": 0.139,
+      "sample_count": 79,
+      "trace_sha256": "fe68e24a3082fd7cf4a360ae8c21f9323d380181d1e2b33d1283f046202264bc",
+      "quality": {
+        "sample_count": 79,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.0038300359712232323,
+        "maximum_arrival_lag_seconds": 12.466373,
+        "firmware_versions": [
+          "pzem-fw-0.2.9"
+        ]
+      },
+      "score": 48.1186197319665,
+      "frozen_reference_deviation": 79.70932770533756,
+      "learning_disposition": "quarantined_reference_shift"
+    },
+    "3f501f01-08bd-57d0-a8c1-6b7f435d574a": {
+      "cycle_id": "3f501f01-08bd-57d0-a8c1-6b7f435d574a",
+      "model_artifact_sha256": "baf06aa2f3612e67a4d4eb151035502f180bf4baa111555fd05672fa209c06d7",
+      "raw_decision": 0.038845248910359675,
+      "raw_score": -0.4611547510896403,
+      "reference_member": false,
+      "classification": "not_evaluated",
+      "evaluation_role": "unvalidated_new_cycle",
+      "failure_probability": null,
+      "features": {
+        "duration_seconds": 225.0,
+        "average_power_w": 2148.286842105263
+      },
+      "started_at": "2026-11-06T04:04:10+00:00",
+      "ended_at": "2026-11-06T04:07:55+00:00",
+      "energy_kwh": 0.137,
+      "sample_count": 76,
+      "trace_sha256": "f908e4aa69c0d8f706cb3bf63c89fb4e9566f7b372634361eb075bbc63421d98",
+      "quality": {
+        "sample_count": 76,
+        "cadence_seconds": 3.0,
+        "largest_gap_seconds": 3.0,
+        "sequence_gaps": 0,
+        "energy_difference_ratio": 0.020005170316301762,
+        "maximum_arrival_lag_seconds": 12.945415,
+        "firmware_versions": [
+          "pzem-fw-0.2.9"
+        ]
+      },
+      "score": 46.115475108964034,
+      "frozen_reference_deviation": 74.11977486080649,
+      "learning_disposition": "quarantined_reference_shift"
+    }
+  },
+  "statistics": {
+    "duration_seconds": {
+      "mean": 212.5,
+      "median": 220.5,
+      "stddev": 23.200215516240362
+    },
+    "average_power_w": {
+      "mean": 1797.6308187541956,
+      "median": 1801.2951443829115,
+      "stddev": 22.224279246978615
+    },
+    "energy_kwh": {
+      "mean": 0.10783333333333334,
+      "median": 0.112,
+      "stddev": 0.012482209562235188
+    }
+  },
+  "artifact_sha256": "5a31f283192a5322b75f59efdbc323650b73aae323ab95447f8b7d4eac35f778"
+}

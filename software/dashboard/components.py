@@ -135,7 +135,7 @@ def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
 
 
 def render_anomaly_assessment(report: dict) -> None:
-    """Render saved ML evidence and an opt-in local descriptive comparison."""
+    """Render model evidence already saved with a report."""
     model = report["evidence_snapshot"]["model"]
     predictions = model.get("predictions", []) if model.get("status") == "trained" else []
     evaluated = any(p.get("anomaly_score") is not None for p in predictions)
@@ -182,41 +182,57 @@ def render_anomaly_assessment(report: dict) -> None:
     st.caption(f"Training status: {training} · Model version: {version}")
     sources = sorted(report["evidence_snapshot"]["source_counts"])
     st.caption("Data provenance: " + ", ".join(sources))
-    from energy_monitor.pilot import load_pilot_reference, pilot_reference_member
 
-    with st.expander("Experimental Pilot Deviation Score"):
-        try:
-            pilot = load_pilot_reference()
-            selected = [pilot_reference_member(pilot, c)
-                        for c in report["evidence_snapshot"]["cycles"]]
-            selected = [c for c in selected if c is not None]
-        except (OSError, ValueError, KeyError, TypeError):
-            st.info("The experimental reference could not be verified.")
-        else:
-            st.caption(f"Six Supabase sensor reference cycles · {pilot['baseline_id']}")
-            st.write("Higher means further from the provisional reference, "
-                     "not probability of appliance failure.")
-            st.caption("Reference-cycle comparison. Complete annotations select collection records;"
-                       " independent normal review and model validation are pending.")
-            if not selected:
-                st.info("This report has no cycle in the frozen six-cycle reference.")
-            for cycle in selected:
-                result = cycle["pilot"]
-                st.metric("Experimental pilot deviation", f"{result['score']:.1f} / 100")
-                st.progress(result["score"] / 100, text=format_myt(cycle["started_at"]))
-                measurements = {
-                    "duration_seconds": "Duration (s)",
-                    "average_power_w": "Mean measured active power (W)",
-                }
-                st.dataframe(pd.DataFrame([
-                    {"Measurement": measurements[k], "Recorded": v["value"],
-                     "Reference median": v["reference_median"],
-                     "Scale": v["scale"], "Deviation": v["scaled_deviation"],
-                     "Weighted points": v["weighted_points"]}
-                    for k, v in result["contributions"].items()
-                ]), hide_index=True, width="stretch")
-            st.caption("Provisional 70% duration / 30% measured-power calculation."
-                       " Validated ML assessment remains Not Evaluated.")
+
+def render_experimental_assessment(cycle: dict, store: SQLiteTelemetryStore) -> None:
+    from energy_monitor.experimental_if import assess_selected_cycle
+
+    try:
+        row, release = assess_selected_cycle(cycle, store)
+    except ValueError as exc:
+        st.info(f"Not Evaluated. {exc}")
+        return
+    except (OSError, ImportError, KeyError, TypeError):
+        st.info("Not Evaluated. The experimental model or cycle evidence is unavailable.")
+        return
+
+    model = release["model"]
+    st.metric("Isolation Forest Anomaly Score", f"{row['score']:.2f} / 100")
+    assessment = "Outside" if row["raw_decision"] < 0 else "Within"
+    st.write(f"{assessment} the experimental model threshold")
+    role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
+    st.caption(
+        f"{role} · {len(model['training_cycle_ids'])} training cycles · "
+        f"{model['model_version']} · {model['artifact_sha256'][:12]}"
+    )
+    measurements = [
+        ("Duration", row["features"]["duration_seconds"], "duration_seconds", "s"),
+        ("Mean active power", row["features"]["average_power_w"], "average_power_w", "W"),
+        ("Meter energy", row["energy_kwh"], "energy_kwh", "kWh"),
+    ]
+    st.dataframe([{
+        "Measurement": label, "Cycle": f"{value:.3f} {unit}",
+        "Reference median": f"{release['statistics'][key]['median']:.3f} {unit}",
+    } for label, value, key, unit in measurements], hide_index=True, width="stretch")
+    feature = max(("duration_seconds", "average_power_w"), key=lambda key: abs(
+        row["features"][key] / release["statistics"][key]["median"] - 1
+    ))
+    delta = 100 * (row["features"][feature] / release["statistics"][feature]["median"] - 1)
+    feature_name = "Duration" if feature == "duration_seconds" else "Mean active power"
+    st.caption(f"{feature_name} differs most from the reference median ({delta:+.1f}%).")
+    st.caption({
+        "frozen_reference": "This cycle contributes to the frozen training reference.",
+        "pending_review": "Baseline update pending independent review.",
+        "quarantined_unusual": "Held for review because the model flagged this observation.",
+        "quarantined_reference_shift": "Held for review because a feature shifted substantially.",
+    }[row["learning_disposition"]])
+    st.caption("Higher scores indicate greater model unusualness. Independent detection accuracy "
+               "has yet to be established. The score does not estimate fault probability.")
+    with st.expander("Model evidence"):
+        st.text(f"score_samples = {row['raw_score']:.9f}\n"
+                f"decision_function = {row['raw_decision']:+.9f}")
+        st.caption(f"Mapping {release['score_mapping']} · 50 is the model threshold. "
+                   "Energy is shown for context. Duration and sampled power are the model inputs.")
 
 
 def render_report_dashboard(report: dict) -> None:
@@ -541,6 +557,9 @@ def render_live_state(view: LiveView, store: SQLiteTelemetryStore) -> None:
     if view.last_cycle is not None:
         last = view.last_cycle
         st.subheader("Last completed cycle")
+        if (last.source_label == "Sensor mode"
+                and (last.cycle_label or "").casefold() not in {"complete", "incomplete"}):
+            st.info("Cycle finished. Open Cycles and label it Complete or Incomplete.")
         _live_cycle_tiles(
             f"{last.duration_seconds} s", last.energy_label, last.energy_kwh,
             last.charge_text, last.tariff_estimate,
@@ -1249,7 +1268,9 @@ def render_cycle_annotation(store: SQLiteTelemetryStore, cycle_id: UUID) -> None
         except ValueError:
             st.info("Annotations are currently unavailable.")
             return
-        labels = store.list_cycle_labels()
+        labels = list(dict.fromkeys(["Complete", "Incomplete", *store.list_cycle_labels()]))
+        if str(annotation.get("label") or "").casefold() not in {"complete", "incomplete"}:
+            st.info("Was the run completed? Choose Complete or Incomplete and save.")
         with st.form(f"annotation-{cycle_id}-{annotation.get('id')}"):
             label = st.text_input(
                 "Label", value=str(annotation.get("label") or ""), max_chars=40,

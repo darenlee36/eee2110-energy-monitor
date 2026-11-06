@@ -745,7 +745,9 @@ class SQLiteTelemetryStore:
             ).fetchone()
         return None if row is None else self._cycle_dict(row)
 
-    def fetch_cycle_readings(self, cycle_id: UUID | str) -> list[dict[str, object]]:
+    def fetch_cycle_readings(
+        self, cycle_id: UUID | str, *, include_predecessor: bool = False
+    ) -> list[dict[str, object]]:
         with self._connect() as connection:
             cycle = connection.execute(
                 """
@@ -756,19 +758,20 @@ class SQLiteTelemetryStore:
             ).fetchone()
             if cycle is None:
                 return []
+            first_sequence = cycle["start_sequence"] - int(include_predecessor)
             if cycle["end_sequence"] is None:
                 sequence_clause = "sample_sequence >= ?"
                 parameters = (
                     cycle["device_id"],
                     cycle["profile_id"],
-                    cycle["start_sequence"],
+                    first_sequence,
                 )
             else:
                 sequence_clause = "sample_sequence BETWEEN ? AND ?"
                 parameters = (
                     cycle["device_id"],
                     cycle["profile_id"],
-                    cycle["start_sequence"],
+                    first_sequence,
                     cycle["end_sequence"],
                 )
             rows = connection.execute(

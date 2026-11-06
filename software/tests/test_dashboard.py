@@ -451,7 +451,7 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     assert any(saved["report_text"] == text.value for text in app.text)
 
 
-def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch):
+def test_unsupported_cycle_has_no_sample_score_and_preserves_saved_results(tmp_path, monkeypatch):
     from energy_monitor.reporting import build_report
 
     database = build_dashboard_cycle_database(tmp_path)
@@ -464,17 +464,14 @@ def test_demo_score_preview_does_not_change_saved_results(tmp_path, monkeypatch)
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
     app.session_state["mode"] = "Reports"
     app.session_state["data_source_filter"] = "All records"
+    before = store.fetch_report(str(report.report_id))
     app.run()
     assert not app.exception
     values = {m.label: m.value for m in app.metric}
     assert values["Anomaly score"] == "Unavailable"
-    before = store.fetch_report(str(report.report_id))
-    next(t for t in app.toggle if t.label == "Show sample score (demo only)").set_value(True).run()
-    assert not app.exception
-    assert any(m.label == "Sample score — not this cycle" and m.value == "72 / 100"
-               for m in app.metric)
-    assert any("not calculated from this cycle" in w.value for w in app.warning)
-    assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
+    assert "Isolation Forest Anomaly Score" not in values
+    assert not any("sample score" in t.label.casefold() for t in app.toggle)
+    assert any("genuine sensor trace" in i.value for i in app.info)
     assert store.fetch_report(str(report.report_id)) == before
     assert len(store.fetch_reports()) == 1
 
