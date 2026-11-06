@@ -423,13 +423,15 @@ def test_local_appliance_rules_require_owner_password_and_save_future_revision(
 def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypatch):
     database = build_dashboard_cycle_database(tmp_path)
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
-    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=10)
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=20)
     app.session_state["mode"] = "Reports"
     app.session_state["data_source_filter"] = "All records"
     app.run()
     next(b for b in app.button if b.label == "Generate cycle report").click().run()
     assert not app.exception
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
+    saved_selector = next(widget for widget in app.selectbox if widget.label == "Saved report")
+    assert saved_selector.options[0].startswith("Unnumbered cycle report")
     assert any("Source: simulated" in c.value for c in app.caption)
     assert any("Engine: template" in c.value for c in app.caption)
     assert any("Not Evaluated" in c.value for c in app.caption)

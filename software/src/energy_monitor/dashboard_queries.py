@@ -398,6 +398,18 @@ def cycle_start_matches(
             and (time_start is None or time_start <= local.time() < time_end))
 
 
+def complete_sensor_cycle_numbers(rows: list[dict]) -> dict[str, int]:
+    """Number genuine Complete runs using the full history in newest-first order."""
+    numbered = (
+        str(row["cycle_id"]) for row in reversed(rows)
+        if row["status"] == CycleStatus.COMPLETED.value
+        and row.get("data_origin") == "sensor"
+        and row.get("record_source", "measured") == "measured"
+        and str(row.get("custom_label") or "").strip().casefold() == "complete"
+    )
+    return {cycle_id: number for number, cycle_id in enumerate(numbered, start=1)}
+
+
 def list_cycle_items(
     store: SQLiteTelemetryStore,
     status_filter: str = "all",
@@ -413,14 +425,7 @@ def list_cycle_items(
                    time_start=time_start, time_end=time_end, now=now)
     cycle_start_matches(now, **options)  # Validate even when history is empty.
     rows = store.fetch_cycles(limit=None)
-    numbered = (
-        row["cycle_id"] for row in reversed(rows)
-        if row["status"] == CycleStatus.COMPLETED.value
-        and row.get("data_origin") == "sensor"
-        and row.get("record_source", "measured") == "measured"
-        and str(row.get("custom_label") or "").strip().casefold() == "complete"
-    )
-    cycle_numbers = {cycle_id: number for number, cycle_id in enumerate(numbered, start=1)}
+    cycle_numbers = complete_sensor_cycle_numbers(rows)
     rows = [r for r in rows if matches_source(
         str(r.get("data_origin", "unknown")), str(r.get("record_source", "measured")),
         source_filter)]
@@ -440,7 +445,9 @@ def list_cycle_items(
     monthly_usage = _monthly_usage_from_env()
     catalog = load_tariff_catalog(CATALOG_PATH)
     return [
-        _cycle_item(row, monthly_usage, catalog, cycle_number=cycle_numbers.get(row["cycle_id"]))
+        _cycle_item(
+            row, monthly_usage, catalog, cycle_number=cycle_numbers.get(str(row["cycle_id"]))
+        )
         for row in rows[:limit]
     ]
 

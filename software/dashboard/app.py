@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import os
 import tempfile
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -30,6 +31,7 @@ from dotenv import load_dotenv
 
 from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.dashboard_queries import (
+    complete_sensor_cycle_numbers,
     get_cycle_detail,
     get_live_view,
     list_cycle_items,
@@ -235,16 +237,14 @@ def render_reports() -> None:
 
     try:
         recent = history()
-        completed = [c for c in store.fetch_cycles()
+        all_cycles = store.fetch_cycles(limit=None)
+        completed = [c for c in all_cycles
                      if c["status"] == "completed" and matches_source(
                          c.get("data_origin", "unknown"), c.get("record_source", "measured"),
                          source_filter)]
         pairs = sorted({(r["profile_id"], r["device_id"]) for r in [*recent, *completed]})
         if not pairs:
-            st.info(
-                "No saved reports or completed cycles yet. "
-                "Run the laptop worker after cycles arrive."
-            )
+            st.info("No saved reports or completed cycles yet.")
             return
         with st.expander("Monitor / appliance"):
             profile, device = st.selectbox(
@@ -296,15 +296,34 @@ def render_reports() -> None:
             )
             return
         by_id = {r["report_id"]: r for r in reports}
+        cycle_numbers = complete_sensor_cycle_numbers(all_cycles)
+        report_labels = {}
+        for rid, saved in by_id.items():
+            if saved["kind"] == "cycle":
+                cycle_id = str(saved["evidence_snapshot"]["cycles"][0]["cycle_id"])
+                number = cycle_numbers.get(cycle_id)
+                report_labels[rid] = (
+                    f"Cycle {number} report" if number is not None
+                    else f"Unnumbered cycle report · {format_myt(saved['period_start'])}"
+                )
+            else:
+                report_labels[rid] = (
+                    f"{saved['cycle_count']}-cycle comparison report · "
+                    f"{format_myt(saved['generated_at'])}"
+                )
+        occurrences = Counter(report_labels.values())
+        for rid, label in report_labels.items():
+            if occurrences[label] > 1:
+                saved = by_id[rid]
+                report_labels[rid] = (
+                    f"{label} · {saved['engine'].title()} · {format_myt(saved['generated_at'])}"
+                )
         if selected_report in by_id:
             st.session_state.report_history_id = selected_report
         if st.session_state.get("report_history_id") not in by_id:
             st.session_state.report_history_id = reports[0]["report_id"]
         report_id = st.selectbox("Saved report", list(by_id), key="report_history_id",
-            format_func=lambda rid: (
-                f"{by_id[rid]['kind'].title()} · {by_id[rid]['cycle_count']} cycle(s) · "
-                f"{format_myt(by_id[rid]['generated_at'])} · report {list(by_id).index(rid) + 1}"
-            ))
+                                 format_func=report_labels.__getitem__)
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
