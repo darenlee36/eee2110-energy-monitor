@@ -153,9 +153,12 @@ for record in ref['cycles']:
 """
     app = AppTest.from_string(script, default_timeout=10).run()
     assert not app.exception
-    values = [m.value for m in app.metric]
+    values = [m.value for m in app.metric if m.label == "Isolation Forest Anomaly Score"]
     assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
                       "61.00 / 100", "45.43 / 100"]
+    assert [m.label for m in app.metric if m.label.startswith("Rolling power baseline")] == [
+        f"Rolling power baseline · {n} earlier cycles" for n in range(1, 6)
+    ]
     assert len(app.dataframe) == 6
     assert all(e.label == "How this anomaly score was calculated" for e in app.expander)
     assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)

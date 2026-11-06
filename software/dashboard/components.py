@@ -186,8 +186,8 @@ def render_anomaly_assessment(report: dict) -> None:
 
 def render_experimental_assessment(
     cycle: dict, store: SQLiteTelemetryStore | None,
-) -> tuple[dict, dict] | None:
-    from energy_monitor.experimental_if import assess_selected_cycle
+) -> tuple[dict, dict, dict | None] | None:
+    from energy_monitor.experimental_if import assess_selected_cycle, rolling_power_comparison
 
     try:
         row, release = assess_selected_cycle(cycle, store)
@@ -204,9 +204,24 @@ def render_experimental_assessment(
     st.write(f"{assessment} the experimental model threshold")
     role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
     st.caption(
-        f"{role} · {len(model['training_cycle_ids'])} training cycles · "
+        f"{role} · {len(model['training_cycle_ids'])} frozen training cycles · "
         f"{model['model_version']} · {model['artifact_sha256'][:12]}"
     )
+    rolling = None
+    try:
+        rolling = rolling_power_comparison(row, release, store)
+    except (ValueError, KeyError, TypeError):
+        st.caption("Prior cycle average is currently unavailable.")
+    else:
+        if rolling is not None:
+            st.metric(
+                f"Rolling power baseline · {rolling['cycle_count']} earlier cycles",
+                f"{rolling['mean_power_w']:,.1f} W",
+            )
+            st.caption("Each earlier Complete cycle with a verified sensor trace contributes "
+                       "once. This cycle joins the comparison for later cycles.")
+        else:
+            st.caption("No earlier verified Complete cycles are available for comparison.")
     measurements = [
         ("Duration", row["features"]["duration_seconds"], "duration_seconds", "s"),
         ("Mean active power", row["features"]["average_power_w"], "average_power_w", "W"),
@@ -247,10 +262,12 @@ def render_experimental_assessment(
         )
         st.caption(f"Decision function {row['raw_decision']:+.9f} · Cutoff 50 · "
                    f"Mapping {release['score_mapping']}. Energy is shown separately.")
-    return row, release
+    return row, release, rolling
 
 
-def experimental_score_insights(cycle: dict, row: dict, release: dict) -> list[str]:
+def experimental_score_insights(
+    cycle: dict, row: dict, release: dict, rolling: dict | None = None,
+) -> list[str]:
     """Explain the displayed score using the same assessment and its reference."""
     score = row["score"]
     distance = abs(score - 50)
@@ -268,6 +285,14 @@ def experimental_score_insights(cycle: dict, row: dict, release: dict) -> list[s
         f"This cycle took {duration:g} s versus a {duration_median:g} s median "
         f"and averaged {power:,.0f} W versus a {power_median:,.0f} W median.",
     ]
+    if rolling is not None:
+        mean = rolling["mean_power_w"]
+        delta = rolling["power_change_w"]
+        result.append(
+            f"Compared with the {rolling['cycle_count']} earlier verified cycles, "
+            f"this cycle drew {delta:+,.1f} W ({100 * delta / mean:+.1f}%) on average. "
+            "Each cycle contributes equally to that rolling comparison."
+        )
     if row["learning_disposition"] == "quarantined_reference_shift":
         result.append("A large measured feature shift triggered a separate baseline review. "
                       "That review applies even when the score is below 50.")
@@ -1356,3 +1381,15 @@ def render_cycle_annotation(store: SQLiteTelemetryStore, cycle_id: UUID) -> None
                     st.error(str(exc))
                 else:
                     st.success("Annotation saved.")
+                    if (existing or label).strip().casefold() == "complete" and hasattr(
+                        store, "append_first_assessment"
+                    ):
+                        from energy_monitor.experimental_if import preserve_first_assessment
+
+                        cycle = store.fetch_cycle(cycle_id)
+                        if cycle is not None:
+                            try:
+                                if preserve_first_assessment(cycle, store):
+                                    st.info("Experimental score saved for this cycle.")
+                            except ValueError:
+                                st.info("Experimental score pending trace or cloud verification.")

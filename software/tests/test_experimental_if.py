@@ -1,12 +1,21 @@
+from datetime import datetime, timedelta
 from pathlib import Path
+from statistics import fmean
+from uuid import uuid4
 
 import pytest
 
+from energy_monitor import experimental_if
+from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.experimental_if import (
+    assess_selected_cycle,
     display_score,
     load_release,
+    preserve_first_assessment,
+    rolling_power_comparison,
     scope_issue,
 )
+from energy_monitor.supabase_sync import SupabaseConfig
 
 
 def test_score_mapping_increases_as_samples_become_more_unusual():
@@ -48,3 +57,61 @@ def test_scope_rejects_simulated_cross_profile_or_incomplete_cycles():
     assert scope_issue({**cycle, "data_origin": "simulated"}, model)
     assert scope_issue({**cycle, "profile_id": "fan"}, model)
     assert scope_issue({**cycle, "status": "incomplete"}, model)
+
+
+def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, monkeypatch):
+    _, release = load_release()
+    row = {**list(release["assessments"].values())[-1], "cycle_id": str(uuid4())}
+    cycle = {
+        **row["features"], "cycle_id": row["cycle_id"], "data_origin": "sensor",
+        "profile_id": "tefal-kettle", "device_id": "sim-esp32-u3-20261102-a",
+        "status": "completed", "record_source": "measured", "custom_label": "Incomplete",
+        "started_at": row["started_at"], "ended_at": row["ended_at"],
+    }
+    values = {}
+
+    def rpc(self, name, payload):
+        if name == "read_intelligence_first_score":
+            return values.get(payload["p_cycle_id"])
+        assert name == "append_intelligence_first_score"
+        assert cycle["custom_label"] == "Complete"
+        return values.setdefault(cycle["cycle_id"], payload["p_evidence"])
+
+    monkeypatch.setattr(SupabaseCycleStore, "_rpc", rpc)
+    monkeypatch.setattr(experimental_if, "_score_trace", lambda *args: row)
+    config = SupabaseConfig("https://project.supabase.co", "test-key")
+    store = SupabaseCycleStore(tmp_path / "first.db", config)
+    assert not preserve_first_assessment(cycle, store)
+    assert not values
+    cycle["custom_label"] = "Complete"
+    assert preserve_first_assessment(cycle, store)
+    fresh = SupabaseCycleStore(tmp_path / "fresh.db", config)
+    monkeypatch.setattr(experimental_if, "_score_trace",
+                        lambda *args: pytest.fail("First score was recalculated"))
+    assert not preserve_first_assessment(cycle, fresh)
+    assert assess_selected_cycle(cycle, fresh)[0]["score"] == row["score"]
+    cycle["custom_label"] = "Incomplete"
+    with pytest.raises(ValueError, match="Incomplete"):
+        assess_selected_cycle(cycle, fresh)
+
+
+def test_rolling_power_compares_first_then_includes_one_mean_per_cycle():
+    _, release = load_release()
+    earlier = list(release["assessments"].values())
+    end = max(datetime.fromisoformat(row["ended_at"]) for row in earlier)
+    powers = [row["features"]["average_power_w"] for row in earlier]
+    cycle11 = {"cycle_id": "cycle-11", "features": {"average_power_w": 2100},
+               "started_at": (end + timedelta(minutes=1)).isoformat(),
+               "ended_at": (end + timedelta(minutes=4)).isoformat()}
+    cycle12 = {"cycle_id": "cycle-12", "features": {"average_power_w": 2200},
+               "started_at": (end + timedelta(minutes=5)).isoformat()}
+
+    first = rolling_power_comparison(cycle11, release, None)
+    assert first["cycle_count"] == 10
+    assert first["mean_power_w"] == pytest.approx(fmean(powers))
+
+    with_cycle11 = {**release, "assessments": {**release["assessments"], "cycle-11": cycle11}}
+    assert rolling_power_comparison(cycle11, with_cycle11, None) == first
+    second = rolling_power_comparison(cycle12, with_cycle11, None)
+    assert second["cycle_count"] == 11
+    assert second["mean_power_w"] == pytest.approx(fmean([*powers, 2100]))

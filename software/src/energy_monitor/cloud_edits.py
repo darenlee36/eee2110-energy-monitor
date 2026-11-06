@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -123,6 +124,36 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
         if not isinstance(state, dict):
             raise ValueError("Invalid cloud edit state")
         self.restore_cloud_edits(state)
+
+    def fetch_first_assessment(self, cycle_id: str) -> dict | None:
+        value = self._rpc("read_intelligence_first_score", {
+            "p_cycle_id": str(UUID(cycle_id)),
+        })
+        if value is None:
+            return None
+        return self._decode_first_assessment(value)
+
+    def append_first_assessment(self, row: dict) -> dict:
+        result = self._rpc("append_intelligence_first_score", {
+            "p_evidence": json.dumps(row, allow_nan=False),
+        })
+        return self._decode_first_assessment(result)
+
+    def fetch_rolling_power(self, cycle_id: str, frozen_ids: list[str]) -> dict:
+        result = self._rpc("read_intelligence_rolling_power", {
+            "p_cycle_id": str(UUID(cycle_id)), "p_frozen_ids": frozen_ids,
+        })
+        if not isinstance(result, dict):
+            raise ValueError("Prior cycle average is unavailable.")
+        return result
+
+    @staticmethod
+    def _decode_first_assessment(value: object) -> dict:
+        if isinstance(value, str):
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        raise ValueError("Invalid cloud first-score receipt.")
 
     def _edit(self, operation: str, payload: dict[str, object]) -> object:
         if not self.can_edit:

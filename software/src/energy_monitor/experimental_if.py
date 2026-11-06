@@ -5,9 +5,11 @@ import hashlib
 import json
 import math
 import statistics
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
+from energy_monitor.dataset import reading_fingerprint
 from energy_monitor.pilot import (
     PILOT_FEATURE_VERSION,
     PUBLIC_REFERENCE_PATH,
@@ -40,6 +42,8 @@ def scope_issue(cycle: dict, model: dict) -> str | None:
         return "This cycle is incomplete."
     if cycle.get("data_origin") != "sensor" or cycle.get("record_source") != "measured":
         return "A completed genuine sensor trace is required."
+    if cycle.get("detection_version", "sim-cycle-v1") != "sim-cycle-v1":
+        return "This cycle uses different appliance rules from the frozen kettle model."
     reference = model["training_reference"]
     device = hashlib.sha256(cycle.get("device_id", "").encode()).hexdigest()
     if cycle.get("profile_id") != reference["profile_id"] or device != (
@@ -150,6 +154,15 @@ def assess_selected_cycle(cycle: dict, store) -> tuple[dict, dict]:
         raise ValueError("Label the finished cycle Complete to run its quality check and score.")
     if store is None:
         raise ValueError("The original sensor trace is unavailable for verification.")
+    if hasattr(store, "fetch_first_assessment"):
+        saved = store.fetch_first_assessment(cycle["cycle_id"])
+        if saved is not None:
+            validate_first_assessment(saved, cycle, release)
+            return saved, release
+    return _score_trace(cycle, store, forest, model), release
+
+
+def _score_trace(cycle: dict, store, forest, model: dict) -> dict:
     readings = store.fetch_cycle_readings(cycle["cycle_id"], include_predecessor=True)
     before = None
     if readings and readings[0]["sample_sequence"] == cycle["start_sequence"] - 1:
@@ -158,4 +171,58 @@ def assess_selected_cycle(cycle: dict, store) -> tuple[dict, dict]:
         "cycle": cycle, "readings": readings, "predecessor": before,
         "annotation": {"label": "Complete"},
     })
-    return assess_audited(forest, model, row), release
+    return {**assess_audited(forest, model, row), "collection_trace_sha256": (
+        reading_fingerprint(readings)
+    )}
+
+
+def validate_first_assessment(row: dict, cycle: dict, release: dict) -> None:
+    if (row != _seal(row)
+            or row.get("cycle_id") != cycle["cycle_id"]
+            or row.get("model_artifact_sha256") != release["model"]["artifact_sha256"]
+            or row.get("reference_member") is not False
+            or row.get("started_at") != cycle["started_at"]
+            or row.get("ended_at") != cycle["ended_at"]
+            or not math.isclose(row["score"], display_score(row["raw_score"]), abs_tol=1e-9)
+            or any(not math.isclose(float(cycle[k]), row["features"][k], abs_tol=.01)
+                   for k in WEIGHTS)):
+        raise ValueError("The saved first score does not match the cycle or model.")
+
+
+def preserve_first_assessment(cycle: dict, store) -> bool:
+    """Persist only a verified, labelled trace outside the bundled frozen history."""
+    forest, release = load_release()
+    model = release["model"]
+    if (scope_issue(cycle, model) or cycle["cycle_id"] in release["assessments"]
+            or str(cycle.get("custom_label") or "").strip().casefold() != "complete"):
+        return False
+    saved = store.fetch_first_assessment(cycle["cycle_id"])
+    if saved is not None:
+        validate_first_assessment(saved, cycle, release)
+        return False
+    row = _seal(_score_trace(cycle, store, forest, model))
+    confirmed = store.append_first_assessment(row)
+    validate_first_assessment(confirmed, cycle, release)
+    if row != confirmed:
+        raise ValueError("Concurrent first score differs from this cycle evidence.")
+    return True
+
+
+def rolling_power_comparison(row: dict, release: dict, store) -> dict | None:
+    frozen = release["assessments"]
+    if hasattr(store, "fetch_rolling_power"):
+        result = store.fetch_rolling_power(row["cycle_id"], list(frozen))
+        count, mean = result["cycle_count"], result["mean_power_w"]
+    else:
+        started_at = datetime.fromisoformat(row["started_at"])
+        powers = [prior["features"]["average_power_w"] for prior in frozen.values()
+                  if datetime.fromisoformat(prior["ended_at"]) < started_at]
+        count, mean = len(powers), statistics.fmean(powers) if powers else None
+    if type(count) is not int or count < 0:
+        raise ValueError("Invalid prior cycle count.")
+    if not count:
+        return None
+    if type(mean) not in (float, int) or not 0 < mean <= 25_000:
+        raise ValueError("Invalid prior cycle mean power.")
+    return {"cycle_count": count, "mean_power_w": mean,
+            "power_change_w": row["features"]["average_power_w"] - mean}
