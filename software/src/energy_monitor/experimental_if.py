@@ -160,7 +160,15 @@ def assess_selected_cycle(cycle: dict, store) -> tuple[dict, dict]:
         if saved is not None:
             validate_first_assessment(saved, cycle, release)
             return saved, release
-    return _score_trace(cycle, store, forest, model), release
+    row = _score_trace(cycle, store, forest, model)
+    if hasattr(store, "append_first_assessment"):
+        # A completed label may have been saved before an interrupted score write.
+        try:
+            row = _save_first_assessment(cycle, row, release, store)
+        except ValueError:
+            # The original trace still supports the score while the baseline is pending.
+            pass
+    return row, release
 
 
 def _score_trace(cycle: dict, store, forest, model: dict) -> dict:
@@ -203,6 +211,11 @@ def preserve_first_assessment(cycle: dict, store) -> bool:
         validate_first_assessment(saved, cycle, release)
         return False
     row = _score_trace(cycle, store, forest, model)
+    _save_first_assessment(cycle, row, release, store)
+    return True
+
+
+def _save_first_assessment(cycle: dict, row: dict, release: dict, store) -> dict:
     prior = store.fetch_rolling_power(row["cycle_id"], list(release["assessments"]))
     reference = {**prior, "version": ROLLING_POWER_VERSION}
     _validate_rolling_reference(reference)
@@ -211,7 +224,7 @@ def preserve_first_assessment(cycle: dict, store) -> bool:
     validate_first_assessment(confirmed, cycle, release)
     if _seal({**row, "rolling_power": confirmed["rolling_power"]}) != confirmed:
         raise ValueError("Concurrent first score differs from this cycle evidence.")
-    return True
+    return confirmed
 
 
 def rolling_power_comparison(row: dict, release: dict, store) -> dict | None:

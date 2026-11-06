@@ -70,6 +70,7 @@ def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, mon
     }
     values = {}
     prior = {"cycle_count": 10, "mean_power_w": 1862.4}
+    cloud_ready = False
 
     def rpc(self, name, payload):
         if name == "read_intelligence_first_score":
@@ -79,6 +80,8 @@ def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, mon
             return prior.copy()
         assert name == "append_intelligence_first_score"
         assert cycle["custom_label"] == "Complete"
+        if not cloud_ready:
+            raise ValueError("First score save interrupted")
         return values.setdefault(cycle["cycle_id"], payload["p_evidence"])
 
     monkeypatch.setattr(SupabaseCycleStore, "_rpc", rpc)
@@ -88,7 +91,14 @@ def test_first_score_survives_fresh_cache_and_complete_is_required(tmp_path, mon
     assert not preserve_first_assessment(cycle, store)
     assert not values
     cycle["custom_label"] = "Complete"
-    assert preserve_first_assessment(cycle, store)
+    with pytest.raises(ValueError, match="interrupted"):
+        preserve_first_assessment(cycle, store)
+    pending, _ = assess_selected_cycle(cycle, store)
+    assert pending["score"] == row["score"]
+    assert "rolling_power" not in pending and not values
+    cloud_ready = True
+    recovered, _ = assess_selected_cycle(cycle, store)
+    assert recovered["rolling_power"]["cycle_count"] == 10
     prior.update(cycle_count=9, mean_power_w=1830.6)
     fresh = SupabaseCycleStore(tmp_path / "fresh.db", config)
     monkeypatch.setattr(experimental_if, "_score_trace",
