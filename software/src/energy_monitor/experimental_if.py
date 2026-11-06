@@ -148,6 +148,8 @@ def assess_selected_cycle(cycle: dict, store) -> tuple[dict, dict]:
         raise ValueError("This run was labelled Incomplete.")
     if label != "complete":
         raise ValueError("Label the finished cycle Complete to run its quality check and score.")
+    if store is None:
+        raise ValueError("The original sensor trace is unavailable for verification.")
     readings = store.fetch_cycle_readings(cycle["cycle_id"], include_predecessor=True)
     before = None
     if readings and readings[0]["sample_sequence"] == cycle["start_sequence"] - 1:

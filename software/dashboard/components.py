@@ -184,7 +184,9 @@ def render_anomaly_assessment(report: dict) -> None:
     st.caption("Data provenance: " + ", ".join(sources))
 
 
-def render_experimental_assessment(cycle: dict, store: SQLiteTelemetryStore) -> None:
+def render_experimental_assessment(
+    cycle: dict, store: SQLiteTelemetryStore | None,
+) -> tuple[dict, dict] | None:
     from energy_monitor.experimental_if import assess_selected_cycle
 
     try:
@@ -228,14 +230,62 @@ def render_experimental_assessment(cycle: dict, store: SQLiteTelemetryStore) -> 
     }[row["learning_disposition"]])
     st.caption("Higher scores indicate greater model unusualness. Independent detection accuracy "
                "has yet to be established. The score does not estimate fault probability.")
-    with st.expander("Model evidence"):
-        st.text(f"score_samples = {row['raw_score']:.9f}\n"
-                f"decision_function = {row['raw_decision']:+.9f}")
-        st.caption(f"Mapping {release['score_mapping']} · 50 is the model threshold. "
-                   "Energy is shown for context. Duration and sampled power are the model inputs.")
+    with st.expander("How this anomaly score was calculated"):
+        st.markdown(
+            f"1. Use **{row['features']['duration_seconds']:g} s** of cycle duration and "
+            f"**{row['features']['average_power_w']:,.1f} W** of sampled mean active power."
+        )
+        st.markdown(
+            f"2. Evaluate those two measurements with the "
+            f"**{model['settings']['n_estimators']}-tree** forest fitted to "
+            f"**{len(model['training_cycle_ids'])}** reference cycles. "
+            "Observations that are easier to isolate receive a more negative raw score."
+        )
+        st.markdown(
+            f"3. Multiply the raw score by −100 and bound it to 0–100. "
+            f"`−100 × ({row['raw_score']:.9f}) = {row['score']:.2f}`."
+        )
+        st.caption(f"Decision function {row['raw_decision']:+.9f} · Cutoff 50 · "
+                   f"Mapping {release['score_mapping']}. Energy is shown separately.")
+    return row, release
 
 
-def render_report_dashboard(report: dict) -> None:
+def experimental_score_insights(cycle: dict, row: dict, release: dict) -> list[str]:
+    """Explain the displayed score using the same assessment and its reference."""
+    score = row["score"]
+    distance = abs(score - 50)
+    position = ("at the cutoff" if distance < .005 else
+                f"{distance:.2f} points {'above' if score > 50 else 'below'} the cutoff")
+    duration = row["features"]["duration_seconds"]
+    power = row["features"]["average_power_w"]
+    reference = release["statistics"]
+    duration_median = reference["duration_seconds"]["median"]
+    power_median = reference["average_power_w"]["median"]
+    result = [
+        f"{score:.2f}/100 is {position} of 50. "
+        "Higher scores mean the model isolated the cycle more readily. "
+        "The scale measures relative unusualness rather than fault probability.",
+        f"This cycle took {duration:g} s versus a {duration_median:g} s median "
+        f"and averaged {power:,.0f} W versus a {power_median:,.0f} W median.",
+    ]
+    if row["learning_disposition"] == "quarantined_reference_shift":
+        result.append("A large measured feature shift triggered a separate baseline review. "
+                      "That review applies even when the score is below 50.")
+    if abs(power / power_median - 1) >= abs(duration / duration_median - 1):
+        voltage = cycle.get("average_voltage_v")
+        context = f" The recorded mean voltage was {voltage:.1f} V." if voltage else ""
+        result.append("A supply-voltage change or a different load can change mean power."
+                      f"{context} Compare the voltage and power traces with a similar run.")
+    else:
+        result.append("Water quantity and starting temperature can change heating time. "
+                      "Compare runs at the same recorded volume and starting conditions.")
+    if score > 50:
+        result.append("Review both traces before repeating the run. If the difference persists "
+                      "under comparable conditions, investigate the appliance and supply.")
+    return result
+
+
+def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = None) -> None:
     """Readable report presentation; persistence and generation stay in app.py."""
     evidence = report["evidence_snapshot"]
     cycles = evidence["cycles"]
@@ -340,7 +390,21 @@ def render_report_dashboard(report: dict) -> None:
             "No saved reading trace available. "
             "Older/manual reports retain their recorded summary only."
         )
+    st.subheader("Isolation Forest — Experimental")
+    # A saved report's selected cycle owns both the score and the insights.
+    score_cycle = cycle
+    if store is not None and (cached := store.fetch_cycle(cycle["cycle_id"])):
+        scope_keys = ("device_id", "profile_id", "start_sequence", "end_sequence",
+                      "status", "detection_version")
+        if all(cached.get(k) == cycle.get(k) for k in scope_keys):
+            score_cycle = {**cycle, "custom_label": cached.get("custom_label")}
+    assessed = render_experimental_assessment(score_cycle, store)
     st.subheader("Insights & next steps")
+    if assessed:
+        with st.container(border=True):
+            st.markdown("#### How to read this anomaly score")
+            for message in experimental_score_insights(cycle, *assessed):
+                st.write(message)
     if report["engine"] == "codex" and report["status"] == "generated":
         st.info("DISCLAIMER · This saved report includes constrained AI-assisted interpretation. "
                 "The readings and tariff evidence remain the basis for review.")

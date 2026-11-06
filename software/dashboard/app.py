@@ -189,14 +189,6 @@ def render_reports() -> None:
         cycles = [c for c in store.fetch_report_cycles(profile, device)
                   if matches_source(c.get("data_origin", "unknown"),
                                     c.get("record_source", "measured"), source_filter)]
-        if cycles:
-            st.subheader("Isolation Forest — Experimental")
-            scored_cycles = {c["cycle_id"]: c for c in cycles}
-            scored_id = st.selectbox(
-                "Cycle to assess", list(scored_cycles),
-                format_func=lambda cid: format_myt(scored_cycles[cid]["started_at"]),
-            )
-            render_experimental_assessment(scored_cycles[scored_id], store)
         selected_report = None
         if can_edit and cycles:
             with st.expander("Generate template report", expanded=True):
@@ -236,7 +228,7 @@ def render_reports() -> None:
         reports = history(profile, device)
         if not reports:
             st.info(
-                "No saved reports for this device/profile. Generate one or run the laptop worker."
+                "No saved reports for this device/profile. Open Cycles for its assessment."
             )
             return
         by_id = {r["report_id"]: r for r in reports}
@@ -253,7 +245,7 @@ def render_reports() -> None:
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
                    f"{format_myt(report['period_end'])}")
-        render_report_dashboard(report)
+        render_report_dashboard(report, store)
         with st.expander("Technical details and saved evidence"):
             st.markdown("**Model evidence at report generation**")
             render_anomaly_assessment(report)

@@ -151,11 +151,31 @@ for record in ref['cycles']:
     selected = {{**cycle, **record['features'], 'cycle_id': record['cycle_id']}}
     render_experimental_assessment(selected, None)
 """
-    app = AppTest.from_string(script).run()
+    app = AppTest.from_string(script, default_timeout=10).run()
     assert not app.exception
     values = [m.value for m in app.metric]
     assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
                       "61.00 / 100", "45.43 / 100"]
     assert len(app.dataframe) == 6
+    assert all(e.label == "How this anomaly score was calculated" for e in app.expander)
+    assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)
     assert any("Training-reference cycle" in c.value for c in app.caption)
+
+
+def test_score_explanation_distinguishes_model_threshold_from_feature_review():
+    from dashboard.components import experimental_score_insights
+    from energy_monitor.experimental_if import load_release
+
+    _, release = load_release()
+    # Use the audited high-voltage cycle and the slightly flagged long run.
+    long_run, _, _, high_power = list(release["assessments"].values())[6:]
+    power_messages = " ".join(experimental_score_insights(
+        {"average_voltage_v": 242.446}, high_power, release,
+    ))
+    assert "46.12/100 is 3.88 points below" in power_messages
+    assert "242.4 V" in power_messages
+    assert "feature shift triggered a separate baseline review" in power_messages
+    duration_messages = " ".join(experimental_score_insights({}, long_run, release))
+    assert "50.21/100 is 0.21 points above" in duration_messages
+    assert "Water quantity and starting temperature" in duration_messages
 
