@@ -238,6 +238,18 @@ def render_reports() -> None:
     try:
         recent = history()
         all_cycles = store.fetch_cycles(limit=None)
+        cycle_names = {
+            cycle_id: f"Cycle {number}"
+            for cycle_id, number in complete_sensor_cycle_numbers(all_cycles).items()
+        }
+        unnumbered_ids = (
+            str(cycle["cycle_id"]) for cycle in reversed(all_cycles)
+            if str(cycle["cycle_id"]) not in cycle_names
+        )
+        cycle_names.update({
+            cycle_id: f"Incomplete cycle {number}"
+            for number, cycle_id in enumerate(unnumbered_ids, start=1)
+        })
         completed = [c for c in all_cycles
                      if c["status"] == "completed" and matches_source(
                          c.get("data_origin", "unknown"), c.get("record_source", "measured"),
@@ -259,7 +271,7 @@ def render_reports() -> None:
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
                     "Completed cycle", list(cycle_by_id), format_func=lambda cid:
-                    f"{format_myt(cycle_by_id[cid]['started_at'])}")
+                    f"{cycle_names[str(cid)]} · {format_myt(cycle_by_id[cid]['started_at'])}")
                 count = st.selectbox("Batch size (cycles)", [5, 10, 20])
                 individual = st.button("Generate cycle report")
                 batch = st.button("Generate batch report")
@@ -296,16 +308,15 @@ def render_reports() -> None:
             )
             return
         by_id = {r["report_id"]: r for r in reports}
-        cycle_numbers = complete_sensor_cycle_numbers(all_cycles)
         report_labels = {}
         for rid, saved in by_id.items():
+            saved_cycles = saved["evidence_snapshot"]["cycles"]
+            for cycle in saved_cycles:
+                cycle_id = str(cycle["cycle_id"])
+                if cycle_id not in cycle_names:
+                    cycle_names[cycle_id] = f"Archived cycle · {format_myt(cycle['started_at'])}"
             if saved["kind"] == "cycle":
-                cycle_id = str(saved["evidence_snapshot"]["cycles"][0]["cycle_id"])
-                number = cycle_numbers.get(cycle_id)
-                report_labels[rid] = (
-                    f"Cycle {number} report" if number is not None
-                    else f"Unnumbered cycle report · {format_myt(saved['period_start'])}"
-                )
+                report_labels[rid] = f"{cycle_names[str(saved_cycles[0]['cycle_id'])]} report"
             else:
                 report_labels[rid] = (
                     f"{saved['cycle_count']}-cycle comparison report · "
@@ -328,7 +339,7 @@ def render_reports() -> None:
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
                    f"{format_myt(report['period_end'])}")
-        render_report_dashboard(report, store)
+        render_report_dashboard(report, store, cycle_names=cycle_names)
         with st.expander("Technical details and saved evidence"):
             st.markdown("**Model evidence at report generation**")
             render_anomaly_assessment(report)

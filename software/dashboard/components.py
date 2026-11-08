@@ -104,8 +104,9 @@ def build_report_trace(cycle: dict, measurement: str) -> go.Figure | None:
     return figure
 
 
-def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
+def build_report_comparison(cycles: list[dict], cycle_names: list[str]) -> list[go.Figure]:
     figures = []
+    cycle_ids = [str(cycle["cycle_id"]) for cycle in cycles]
     sources = list(dict.fromkeys(_report_source(c) for c in cycles))
     for field, title, unit in (
         ("meter_energy_kwh", "Energy used by cycle", "Energy (kWh)"),
@@ -113,19 +114,21 @@ def build_report_comparison(cycles: list[dict]) -> list[go.Figure]:
     ):
         figure = go.Figure()
         for source in sources:
-            group = [(i, c) for i, c in enumerate(cycles, 1) if _report_source(c) == source]
+            group = [i for i, cycle in enumerate(cycles) if _report_source(cycle) == source]
             label, color = REPORT_SOURCES[source]
             figure.add_trace(go.Bar(
-                x=[f"Cycle {i}" for i, _ in group],
-                y=[c[field] if field != "meter_energy_kwh" or c["eligible_for_totals"]
-                   else None for _, c in group],
+                x=[cycle_ids[i] for i in group],
+                y=[cycles[i][field] if field != "meter_energy_kwh"
+                   or cycles[i]["eligible_for_totals"] else None for i in group],
+                customdata=[cycle_names[i] for i in group],
                 name=label, marker_color=color,
-                hovertemplate="%{x}<br>%{y:.5g} " + unit + "<extra>%{fullData.name}</extra>",
+                hovertemplate="%{customdata}<br>%{y:.5g} " + unit
+                + "<extra>%{fullData.name}</extra>",
             ))
         figure.update_layout(
             **_transparent_chart_layout(330), title={"text": title, "x": 0.02},
-            xaxis={"categoryorder": "array",
-                   "categoryarray": [f"Cycle {i}" for i in range(1, len(cycles) + 1)],
+            xaxis={"type": "category", "categoryorder": "array", "categoryarray": cycle_ids,
+                   "tickmode": "array", "tickvals": cycle_ids, "ticktext": cycle_names,
                    "automargin": True},
             yaxis={"title": unit, "rangemode": "tozero", "automargin": True},
             legend={"orientation": "h", "y": -0.35},
@@ -326,10 +329,13 @@ def rolling_power_insights(cycle: dict, rolling: dict) -> list[str]:
     ]
 
 
-def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = None) -> None:
+def render_report_dashboard(
+    report: dict, store: SQLiteTelemetryStore | None, *, cycle_names: dict[str, str],
+) -> None:
     """Readable report presentation; persistence and generation stay in app.py."""
     evidence = report["evidence_snapshot"]
     cycles = evidence["cycles"]
+    names = [cycle_names[str(cycle["cycle_id"])] for cycle in cycles]
     if len(cycles) > 1:
         st.subheader(f"{len(cycles)}-cycle overview")
         for source, total in evidence["totals_by_source"].items():
@@ -341,7 +347,7 @@ def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = N
                 f"RM {float(total['charge_low_rm']):.3f}–{float(total['charge_high_rm']):.3f}"
             )
             cells[2].metric("Estimated report cost", cost)
-        for index, figure in enumerate(build_report_comparison(cycles)):
+        for index, figure in enumerate(build_report_comparison(cycles, names)):
             render_resettable_chart(figure, chart_key=f"report_batch_{report['report_id']}_{index}")
         st.caption(
             "Cycles are ordered by completion time. Quality-excluded cycles have no energy bar; "
@@ -354,7 +360,7 @@ def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = N
     selected = st.selectbox(
         "Cycle readings", range(len(cycles)),
         format_func=lambda i: (
-            f"Cycle {i + 1} · " + format_myt(cycles[i]["started_at"], "%d %b, %H:%M")
+            f"{names[i]} · " + format_myt(cycles[i]["started_at"], "%d %b, %H:%M")
         ),
         key=f"report_cycle_{report['report_id']}",
     ) if len(cycles) > 1 else 0
@@ -372,7 +378,7 @@ def render_report_dashboard(report: dict, store: SQLiteTelemetryStore | None = N
         if binding["status"] != "bound":
             st.warning("Collection context is unavailable, mismatched or awaiting review. "
                        "Numerical readings are retained; model scoring is blocked.")
-    st.subheader(f"Cycle {selected + 1} performance")
+    st.subheader(f"{names[selected]} performance")
     if _report_source(cycle) != "sensor":
         st.caption(REPORT_SOURCES[_report_source(cycle)][0])
     cells = st.columns(3)

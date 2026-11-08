@@ -431,13 +431,52 @@ def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypat
     assert not app.exception
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
     saved_selector = next(widget for widget in app.selectbox if widget.label == "Saved report")
-    assert saved_selector.options[0].startswith("Unnumbered cycle report")
+    assert saved_selector.options == ["Incomplete cycle 1 report"]
+    assert any(h.value == "Incomplete cycle 1 performance" for h in app.subheader)
     assert any("Source: simulated" in c.value for c in app.caption)
     assert any("Engine: template" in c.value for c in app.caption)
     assert any("Not Evaluated" in c.value for c in app.caption)
     assert app.json
     next(b for b in app.button if b.label == "Generate cycle report").click().run()
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
+
+
+def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monkeypatch):
+    from test_reporting import seeded_cycles
+
+    from energy_monitor.reporting import build_report
+
+    store, ids = seeded_cycles(tmp_path, 4)
+    # Exercise the sensor presentation branch using fixture cycles only.
+    with store._connect() as connection, connection:
+        connection.execute(
+            "UPDATE appliance_cycles SET summary_json = "
+            "json_set(summary_json, '$.data_origin', 'sensor')"
+        )
+    for index, label in [(0, "Incomplete"), (1, "Complete"), (3, "Complete")]:
+        store.save_cycle_annotation(ids[index], label=label, note="", expected_id=None)
+    report_ids = []
+    for cycle_id in ids:
+        cycle = store.fetch_cycle(cycle_id)
+        report_ids.append(store.save_report(build_report(
+            store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
+            cycle_id=cycle_id,
+        )))
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(store.database_path))
+    app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=20)
+    app.session_state["mode"] = "Reports"
+    app.session_state["data_source_filter"] = "All records"
+    app.run()
+    assert not app.exception
+    selector = app.selectbox(key="report_history_id")
+    assert set(selector.options) == {
+        "Cycle 1 report", "Cycle 2 report", "Incomplete cycle 1 report",
+        "Incomplete cycle 2 report",
+    }
+    selector.set_value(report_ids[3]).run()
+    assert any(h.value == "Cycle 2 performance" for h in app.subheader)
+    app.selectbox(key="report_history_id").set_value(report_ids[2]).run()
+    assert any(h.value == "Incomplete cycle 2 performance" for h in app.subheader)
 
 
 def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypatch):
@@ -473,6 +512,8 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     app.run()
     assert not app.exception
     assert any("cached reports" in w.value for w in app.warning)
+    assert app.selectbox(key="report_history_id").options[0].startswith("Archived cycle · ")
+    assert any(h.value.startswith("Archived cycle · ") for h in app.subheader)
     assert any("Engine: template" in c.value for c in app.caption)
     assert not any(b.label.startswith("Generate") for b in app.button)
     assert app.json
@@ -598,12 +639,15 @@ def test_report_comparison_separates_sources_and_omits_excluded_energy():
     from dashboard.components import build_report_comparison
 
     cycles = [
-        {"record_source": "measured", "data_origin": "simulated", "meter_energy_kwh": 0.1,
-         "duration_seconds": 150, "eligible_for_totals": True},
-        {"record_source": "manual", "data_origin": "unknown", "meter_energy_kwh": 0.2,
-         "duration_seconds": 180, "eligible_for_totals": False},
+        {"cycle_id": "sensor-id", "record_source": "measured", "data_origin": "sensor",
+         "meter_energy_kwh": 0.1, "duration_seconds": 150, "eligible_for_totals": True},
+        {"cycle_id": "manual-id", "record_source": "manual", "data_origin": "unknown",
+         "meter_energy_kwh": 0.2, "duration_seconds": 180, "eligible_for_totals": False},
     ]
-    energy, duration = build_report_comparison(cycles)
+    names = ["Cycle 19", "Incomplete cycle 2"]
+    energy, duration = build_report_comparison(cycles, names)
+    assert list(energy.layout.xaxis.ticktext) == names
+    assert list(duration.data[1].customdata) == ["Incomplete cycle 2"]
     assert list(energy.data[0].y) == [0.1]
     assert list(energy.data[1].y) == [None]
     assert list(duration.data[1].y) == [180]
@@ -663,7 +707,8 @@ def test_visual_batch_reports_allow_exact_count_and_cycle_selection(tmp_path, mo
     assert len(picker.options) == count
     picker.set_value(count - 1).run()
     assert not app.exception
-    assert any(h.value == f"Cycle {count} performance" for h in app.subheader)
+    assert picker.options[0].startswith("Incomplete cycle 1 ·")
+    assert any(h.value == f"Incomplete cycle {count} performance" for h in app.subheader)
     assert next(m for m in app.metric if m.label == "Anomaly score").value == "Unavailable"
 
 
