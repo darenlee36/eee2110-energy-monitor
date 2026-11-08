@@ -446,17 +446,18 @@ def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monk
 
     from energy_monitor.reporting import build_report
 
-    store, ids = seeded_cycles(tmp_path, 4)
+    store, ids = seeded_cycles(tmp_path, 5)
     # Exercise the sensor presentation branch using fixture cycles only.
     with store._connect() as connection, connection:
         connection.execute(
             "UPDATE appliance_cycles SET summary_json = "
             "json_set(summary_json, '$.data_origin', 'sensor')"
         )
-    for index, label in [(0, "Incomplete"), (1, "Complete"), (3, "Complete")]:
+    # The oldest cycle has no saved report and must not use an incomplete report number.
+    for index, label in [(1, "Incomplete"), (2, "Complete"), (4, "Complete")]:
         store.save_cycle_annotation(ids[index], label=label, note="", expected_id=None)
     report_ids = []
-    for cycle_id in ids:
+    for cycle_id in ids[1:]:
         cycle = store.fetch_cycle(cycle_id)
         report_ids.append(store.save_report(build_report(
             store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],

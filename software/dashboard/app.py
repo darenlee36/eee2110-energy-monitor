@@ -222,34 +222,24 @@ def render_reports() -> None:
 
     def history(profile=None, device=None):
         try:
-            reports = store.fetch_reports(profile, device)
-            return [r for r in reports if all(matches_source(
-                c["data_origin"], c["record_source"], source_filter)
-                for c in r["evidence_snapshot"]["cycles"])]
+            return store.fetch_reports(profile, device)
         except SupabaseSyncError:
             st.warning(
                 "Cloud history unavailable. Showing cached reports; history may be incomplete."
             )
-            reports = SQLiteTelemetryStore.fetch_reports(store, profile, device)
-            return [r for r in reports if all(matches_source(
-                c["data_origin"], c["record_source"], source_filter)
-                for c in r["evidence_snapshot"]["cycles"])]
+            return SQLiteTelemetryStore.fetch_reports(store, profile, device)
+
+    def report_matches_source(report):
+        return all(matches_source(c["data_origin"], c["record_source"], source_filter)
+                   for c in report["evidence_snapshot"]["cycles"])
 
     try:
-        recent = history()
+        recent = [report for report in history() if report_matches_source(report)]
         all_cycles = store.fetch_cycles(limit=None)
         cycle_names = {
             cycle_id: f"Cycle {number}"
             for cycle_id, number in complete_sensor_cycle_numbers(all_cycles).items()
         }
-        unnumbered_ids = (
-            str(cycle["cycle_id"]) for cycle in reversed(all_cycles)
-            if str(cycle["cycle_id"]) not in cycle_names
-        )
-        cycle_names.update({
-            cycle_id: f"Incomplete cycle {number}"
-            for number, cycle_id in enumerate(unnumbered_ids, start=1)
-        })
         completed = [c for c in all_cycles
                      if c["status"] == "completed" and matches_source(
                          c.get("data_origin", "unknown"), c.get("record_source", "measured"),
@@ -271,7 +261,7 @@ def render_reports() -> None:
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
                     "Completed cycle", list(cycle_by_id), format_func=lambda cid:
-                    f"{cycle_names[str(cid)]} · {format_myt(cycle_by_id[cid]['started_at'])}")
+                    f"{format_myt(cycle_by_id[cid]['started_at'])}")
                 count = st.selectbox("Batch size (cycles)", [5, 10, 20])
                 individual = st.button("Generate cycle report")
                 batch = st.button("Generate batch report")
@@ -301,12 +291,26 @@ def render_reports() -> None:
                         )
                     except ValueError as exc:
                         st.error(str(exc))
-        reports = history(profile, device)
+        scope_reports = history(profile, device)
+        reports = [report for report in scope_reports if report_matches_source(report)]
         if not reports:
             st.info(
                 "No saved reports for this device/profile. Open Cycles for its assessment."
             )
             return
+        reported_cycle_ids = {
+            str(cycle["cycle_id"]) for report in scope_reports
+            for cycle in report["evidence_snapshot"]["cycles"]
+        }
+        unnumbered_ids = (
+            str(cycle["cycle_id"]) for cycle in reversed(all_cycles)
+            if str(cycle["cycle_id"]) in reported_cycle_ids
+            and str(cycle["cycle_id"]) not in cycle_names
+        )
+        cycle_names.update({
+            cycle_id: f"Incomplete cycle {number}"
+            for number, cycle_id in enumerate(unnumbered_ids, start=1)
+        })
         by_id = {r["report_id"]: r for r in reports}
         report_labels = {}
         for rid, saved in by_id.items():
