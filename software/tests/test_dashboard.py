@@ -526,7 +526,7 @@ def test_reports_owner_generates_and_displays_saved_evidence(tmp_path, monkeypat
     assert len(SQLiteTelemetryStore(database).fetch_reports()) == 1
 
 
-def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monkeypatch):
+def test_saved_reports_follow_cycle_order_and_keep_incomplete_numbers(tmp_path, monkeypatch):
     from test_reporting import seeded_cycles
 
     from energy_monitor.reporting import build_report
@@ -541,13 +541,14 @@ def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monk
     # The oldest cycle has no saved report and must not use an incomplete report number.
     for index, label in [(1, "Incomplete"), (2, "Complete"), (4, "Complete")]:
         store.save_cycle_annotation(ids[index], label=label, note="", expected_id=None)
-    report_ids = []
-    for cycle_id in ids[1:]:
+    report_ids = {}
+    for index in (3, 4, 1, 2):
+        cycle_id = ids[index]
         cycle = store.fetch_cycle(cycle_id)
-        report_ids.append(store.save_report(build_report(
+        report_ids[index] = store.save_report(build_report(
             store, profile_id=cycle["profile_id"], device_id=cycle["device_id"],
             cycle_id=cycle_id,
-        )))
+        ))
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(store.database_path))
     app = AppTest.from_file(str(DASHBOARD_PATH), default_timeout=20)
     app.session_state["mode"] = "Reports"
@@ -556,13 +557,12 @@ def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monk
     assert not app.exception
     selector = app.selectbox(key="report_history_id")
     assert selector.options == [
-        "Cycle 1 report", "Cycle 2 report", "Incomplete cycle 1 report",
-        "Incomplete cycle 2 report",
+        "Cycle 2 report", "Incomplete cycle 2 report",
+        "Cycle 1 report", "Incomplete cycle 1 report",
     ]
-    assert selector.value == report_ids[3]
-    selector.set_value(report_ids[3]).run()
+    assert selector.value == report_ids[4]
     assert any(h.value == "Cycle 2 performance" for h in app.subheader)
-    app.selectbox(key="report_history_id").set_value(report_ids[2]).run()
+    selector.set_value(report_ids[3]).run()
     assert any(h.value == "Incomplete cycle 2 performance" for h in app.subheader)
 
 

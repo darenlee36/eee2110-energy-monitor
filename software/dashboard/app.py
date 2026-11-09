@@ -14,6 +14,7 @@ from components import (
     build_cycle_figure,
     build_electrical_figure,
     format_myt,
+    malaysia_time,
     render_anomaly_assessment,
     render_command_bar,
     render_cycle_annotation,
@@ -308,8 +309,7 @@ def render_reports() -> None:
         )
         incomplete_numbers = {cid: number for number, cid in enumerate(unnumbered_ids, start=1)}
         cycle_names.update({cid: f"Incomplete cycle {n}" for cid, n in incomplete_numbers.items()})
-        cycle_order = {cid: (0, n) for cid, n in complete_numbers.items()}
-        cycle_order.update({cid: (1, n) for cid, n in incomplete_numbers.items()})
+        cycle_starts = {str(c["cycle_id"]): c["started_at"] for c in all_cycles}
         by_id = {r["report_id"]: r for r in reports}
         report_labels = {}
         report_order = {}
@@ -322,9 +322,9 @@ def render_reports() -> None:
             if saved["kind"] == "cycle":
                 cycle_id = str(saved_cycles[0]["cycle_id"])
                 report_labels[rid] = f"{cycle_names[cycle_id]} report"
-                report_order[rid] = cycle_order.get(cycle_id, (2, 0))
+                started_at = cycle_starts.get(cycle_id, saved_cycles[0]["started_at"])
+                report_order[rid] = (malaysia_time(started_at), cycle_id)
             else:
-                report_order[rid] = (3, 0)
                 report_labels[rid] = (
                     f"{saved['cycle_count']}-cycle comparison report · "
                     f"{format_myt(saved['generated_at'])}"
@@ -336,11 +336,13 @@ def render_reports() -> None:
                 report_labels[rid] = (
                     f"{label} · {saved['engine'].title()} · {format_myt(saved['generated_at'])}"
                 )
+        ordered_ids = sorted(report_order, key=report_order.__getitem__, reverse=True)
+        ordered_ids.extend(rid for rid in by_id if rid not in report_order)
         if selected_report in by_id:
             st.session_state.report_history_id = selected_report
         if st.session_state.get("report_history_id") not in by_id:
-            st.session_state.report_history_id = reports[0]["report_id"]
-        report_id = st.selectbox("Saved report", sorted(by_id, key=report_order.__getitem__),
+            st.session_state.report_history_id = ordered_ids[0]
+        report_id = st.selectbox("Saved report", ordered_ids,
                                  key="report_history_id",
                                  format_func=report_labels.__getitem__)
         report = by_id[report_id]
