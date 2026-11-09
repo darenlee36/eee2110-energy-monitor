@@ -555,10 +555,11 @@ def test_saved_report_names_match_cycles_and_skip_ineligible_rows(tmp_path, monk
     app.run()
     assert not app.exception
     selector = app.selectbox(key="report_history_id")
-    assert set(selector.options) == {
+    assert selector.options == [
         "Cycle 1 report", "Cycle 2 report", "Incomplete cycle 1 report",
         "Incomplete cycle 2 report",
-    }
+    ]
+    assert selector.value == report_ids[3]
     selector.set_value(report_ids[3]).run()
     assert any(h.value == "Cycle 2 performance" for h in app.subheader)
     app.selectbox(key="report_history_id").set_value(report_ids[2]).run()

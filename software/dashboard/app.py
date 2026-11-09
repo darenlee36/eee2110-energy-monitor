@@ -237,10 +237,8 @@ def render_reports() -> None:
     try:
         recent = [report for report in history() if report_matches_source(report)]
         all_cycles = store.fetch_cycles(limit=None)
-        cycle_names = {
-            cycle_id: f"Cycle {number}"
-            for cycle_id, number in complete_sensor_cycle_numbers(all_cycles).items()
-        }
+        complete_numbers = complete_sensor_cycle_numbers(all_cycles)
+        cycle_names = {cid: f"Cycle {number}" for cid, number in complete_numbers.items()}
         completed = [c for c in all_cycles
                      if c["status"] == "completed" and matches_source(
                          c.get("data_origin", "unknown"), c.get("record_source", "measured"),
@@ -308,12 +306,13 @@ def render_reports() -> None:
             if str(cycle["cycle_id"]) in reported_cycle_ids
             and str(cycle["cycle_id"]) not in cycle_names
         )
-        cycle_names.update({
-            cycle_id: f"Incomplete cycle {number}"
-            for number, cycle_id in enumerate(unnumbered_ids, start=1)
-        })
+        incomplete_numbers = {cid: number for number, cid in enumerate(unnumbered_ids, start=1)}
+        cycle_names.update({cid: f"Incomplete cycle {n}" for cid, n in incomplete_numbers.items()})
+        cycle_order = {cid: (0, n) for cid, n in complete_numbers.items()}
+        cycle_order.update({cid: (1, n) for cid, n in incomplete_numbers.items()})
         by_id = {r["report_id"]: r for r in reports}
         report_labels = {}
+        report_order = {}
         for rid, saved in by_id.items():
             saved_cycles = saved["evidence_snapshot"]["cycles"]
             for cycle in saved_cycles:
@@ -321,8 +320,11 @@ def render_reports() -> None:
                 if cycle_id not in cycle_names:
                     cycle_names[cycle_id] = f"Archived cycle · {format_myt(cycle['started_at'])}"
             if saved["kind"] == "cycle":
-                report_labels[rid] = f"{cycle_names[str(saved_cycles[0]['cycle_id'])]} report"
+                cycle_id = str(saved_cycles[0]["cycle_id"])
+                report_labels[rid] = f"{cycle_names[cycle_id]} report"
+                report_order[rid] = cycle_order.get(cycle_id, (2, 0))
             else:
+                report_order[rid] = (3, 0)
                 report_labels[rid] = (
                     f"{saved['cycle_count']}-cycle comparison report · "
                     f"{format_myt(saved['generated_at'])}"
@@ -338,7 +340,8 @@ def render_reports() -> None:
             st.session_state.report_history_id = selected_report
         if st.session_state.get("report_history_id") not in by_id:
             st.session_state.report_history_id = reports[0]["report_id"]
-        report_id = st.selectbox("Saved report", list(by_id), key="report_history_id",
+        report_id = st.selectbox("Saved report", sorted(by_id, key=report_order.__getitem__),
+                                 key="report_history_id",
                                  format_func=report_labels.__getitem__)
         report = by_id[report_id]
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
