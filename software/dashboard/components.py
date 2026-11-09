@@ -198,8 +198,9 @@ def render_anomaly_assessment(report: dict) -> None:
 
 
 def render_cycle_assessment(
-    cycle: dict, store: SQLiteTelemetryStore | None,
-) -> dict | None:
+    cycle: dict, store: SQLiteTelemetryStore | None, *, show_insights: bool = False,
+) -> tuple[dict | None, dict] | None:
+    from energy_monitor.adaptive_warning import NATIVE_BOUNDARY, assess_warning
     from energy_monitor.experimental_if import (
         assess_current_model,
         assess_selected_cycle,
@@ -228,6 +229,16 @@ def render_cycle_assessment(
             current = assess_current_model(row, rolling, release)
         except (ValueError, KeyError, TypeError, ImportError):
             st.info("Current Isolation Forest score unavailable for this cycle.")
+    reference_prediction, reference_model = current or (row, release["model"])
+    try:
+        calibrated = assess_warning(cycle, row)
+    except (OSError, ValueError, KeyError, TypeError, ImportError):
+        calibrated = None
+        st.caption("Saved adaptive warning policy unavailable for this cycle.")
+    policy = calibrated["policy"] if calibrated else None
+    if calibrated:
+        reference_prediction, reference_model = calibrated, policy["model"]
+    insight = model_pattern_insight(row, reference_prediction, reference_model, policy)
     if current is not None:
         prediction, model = current
         st.metric("Current Isolation Forest anomaly score", f"{prediction['score']:.2f} / 100")
@@ -246,6 +257,40 @@ def render_cycle_assessment(
             )
             st.caption("The selected cycle contributed to this fit. Independent detection "
                        "accuracy has yet to be established.")
+    if policy:
+        st.metric("Frozen warning-model score", f"{calibrated['score']:.2f} / 100")
+        st.caption(f"Adaptive warning threshold: {policy['threshold']:.2f} / 100")
+    else:
+        st.caption("Adaptive warning threshold: calibration pending")
+    if insight["pattern"] == "warning":
+        st.warning(
+            f"Potential anomalous appliance behaviour detected. Score {calibrated['score']:.2f} "
+            f"/ 100 · adaptive threshold {policy['threshold']:.2f} / 100. "
+            "Review the measurements and operating conditions before drawing conclusions."
+        )
+    else:
+        st.write("Normal pattern" if insight["pattern"] == "normal" else "Unusual pattern")
+    with st.expander("Native model boundary and adaptive warning policy"):
+        st.write(
+            f"Score {reference_prediction['score']:.2f} / 100 · native decision boundary "
+            f"{NATIVE_BOUNDARY:g} / 100 · model {reference_model['artifact_sha256'][:12]}."
+        )
+        member = row["cycle_id"] in reference_model["training_cycle_ids"]
+        st.caption("In-sample training cycle." if member else "Unseen at model fitting.")
+        st.write(
+            "The native boundary marks model unusualness. A separate warning cutoff uses "
+            "scores from independently reviewed normal cycles held out of the warning model fit."
+        )
+        if policy:
+            st.caption(
+                f"{policy['percentile']}th-percentile upper rank with ties excluded · "
+                f"{policy['calibration_count']} held-out normal cycles across "
+                f"{policy['calibration_session_count']} sessions · "
+                f"{policy['method']} · policy {policy['artifact_sha256'][:12]} · "
+                f"calibrated {format_myt(policy['calibrated_at'])}."
+            )
+        else:
+            st.caption("No eligible published calibration applies to this cycle.")
     if rolling is not None:
         power = row["features"]["average_power_w"]
         mean = rolling["mean_power_w"]
@@ -321,9 +366,35 @@ def render_cycle_assessment(
             f"3. Multiply the raw score by −100 and bound it to 0–100. "
             f"`−100 × ({row['raw_score']:.9f}) = {row['score']:.2f}`."
         )
-        st.caption(f"Decision function {row['raw_decision']:+.9f} · Cutoff 50 · "
+        st.caption(f"Decision function {row['raw_decision']:+.9f} · Native boundary 50 / 100 · "
                    f"Mapping {release['score_mapping']}. Energy is shown separately.")
-    return rolling
+    if show_insights:
+        st.subheader("Insights & next steps")
+        for messages in cycle_presentation_insights(cycle, insight).values():
+            for message in messages:
+                st.write(message)
+    return rolling, insight
+
+
+def model_pattern_insight(row: dict, prediction: dict, model: dict,
+                          policy: dict | None = None) -> dict:
+    reference = model["training_reference"]["cycles"]
+    duration_mean = fmean(c["features"]["duration_seconds"] for c in reference)
+    power_mean = fmean(c["features"]["average_power_w"] for c in reference)
+    duration_delta = row["features"]["duration_seconds"] - duration_mean
+    power_delta = row["features"]["average_power_w"] - power_mean
+    duration_pct, power_pct = 100 * duration_delta / duration_mean, 100 * power_delta / power_mean
+    pattern = "normal" if prediction["raw_decision"] >= 0 else "unusual"
+    if policy and prediction["score"] >= policy["threshold"]:
+        pattern = "warning"
+    return {
+        "pattern": pattern, "duration_led": abs(duration_pct) >= abs(power_pct),
+        "comparison": (
+            f"Compared with this model's training means, duration was "
+            f"{duration_delta:+.1f} s ({duration_pct:+.1f}%) and sampled mean active "
+            f"power was {power_delta:+,.1f} W ({power_pct:+.1f}%)."
+        ),
+    }
 
 
 def rolling_power_insights(cycle: dict, rolling: dict) -> list[str]:
@@ -334,8 +405,7 @@ def rolling_power_insights(cycle: dict, rolling: dict) -> list[str]:
     return [
         f"Compared with the current mean of {rolling['cycle_count']} verified cycles, "
         f"this cycle's mean power changed by {delta:+,.1f} W ({100 * delta / mean:+.1f}%).",
-        "Supply voltage or a different load can affect mean power."
-        f"{context} Compare the voltage and power traces with a similar run.",
+        context.strip() or "Mean voltage is unavailable for this comparison.",
     ]
 
 
@@ -454,7 +524,8 @@ def render_report_dashboard(
                       "status", "detection_version")
         if all(cached.get(k) == cycle.get(k) for k in scope_keys):
             score_cycle = {**cycle, "custom_label": cached.get("custom_label")}
-    rolling = render_cycle_assessment(score_cycle, store)
+    assessment = render_cycle_assessment(score_cycle, store)
+    rolling, insight = assessment if assessment else (None, None)
     st.subheader("Insights & next steps")
     if rolling is not None:
         with st.container(border=True):
@@ -472,7 +543,7 @@ def render_report_dashboard(
                 "Appliance condition and physical causes require separate verification.")
     headings = {"observations": "What the readings show", "possibilities": "Possible explanations",
                 "actions": "What to try next"}
-    for section, messages in cycle_presentation_insights(cycle).items():
+    for section, messages in cycle_presentation_insights(cycle, insight).items():
         with st.container(border=True):
             st.markdown(f"#### {headings[section]}")
             for message in messages:
@@ -495,7 +566,7 @@ def render_report_dashboard(
     render_tariff_disclosure(estimate, "Cycle energy")
 
 
-def cycle_presentation_insights(cycle: dict) -> dict[str, list[str]]:
+def cycle_presentation_insights(cycle: dict, insight: dict | None = None) -> dict[str, list[str]]:
     """Derive display guidance without changing canonical report text or hashes."""
     duration = cycle["duration_seconds"]
     energy = cycle["meter_energy_kwh"]
@@ -514,6 +585,8 @@ def cycle_presentation_insights(cycle: dict) -> dict[str, list[str]]:
         f"Recorded average power was {cycle['average_power_w']:,.0f} W "
         f"and peak power was {cycle['peak_power_w']:,.0f} W.",
     ]
+    if insight:
+        observations.append(insight["comparison"])
     if invalid or missing or cycle.get("gap_count"):
         observations.append(
             f"{valid} valid readings, {invalid} invalid, {missing} estimated missing."
@@ -524,6 +597,26 @@ def cycle_presentation_insights(cycle: dict) -> dict[str, list[str]]:
         observations.append(f"The meter and integrated energy estimates differ by {ratio:.1%}.")
         possibilities = ["A counter change or missed interval could affect the energy cross-check."]
         actions = ["Compare the saved meter counter with the power trace."]
+    elif insight and insight["pattern"] != "normal":
+        if insight["duration_led"]:
+            possibilities = [
+                "Duration had the larger relative difference. Water volume or starting "
+                "temperature could explain part of the difference."
+            ]
+            actions = ["Compare heating times at the same water volume and starting temperature."]
+        else:
+            possibilities = [
+                "Mean active power had the larger relative difference. Supply voltage "
+                "or a difference in connected load could affect the comparison."
+            ]
+            actions = ["Compare voltage and active-power traces under similar conditions."]
+        if insight["pattern"] == "warning":
+            actions.append(
+                "Review the trace and collection notes. A score alone cannot establish a fault."
+            )
+    elif insight:
+        possibilities = ["Duration and power together fall within the native model boundary."]
+        actions = ["Check repeatability at the same water volume and starting temperature."]
     else:
         possibilities = ["Water volume and starting conditions can change duration and energy."]
         actions = ["Compare with a completed cycle under the same recorded operating conditions."]
@@ -1185,6 +1278,7 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
             for item in items
         ]
     )
+    st.caption("Table assessments use cycle rules. Experimental model results appear separately.")
     event = st.dataframe(
         frame,
         width="stretch",

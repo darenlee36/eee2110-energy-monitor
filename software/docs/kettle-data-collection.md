@@ -247,3 +247,30 @@ evaluation/saved reports, then wire owner-reviewed collection context into repor
 scoring while retaining the current fail-closed guard. This can be done without
 PZEM readings or live AI. Freeze interfaces/test procedures on Sunday; use next
 week for real measurement checks, collection and evaluation, not dashboard redesign.
+
+
+## Experimental adaptive warnings
+
+The dashboard's rolling experimental model continues to report its native
+boundary. Its training scores cannot set a formal warning cutoff. Publish a
+separate frozen model and warning policy from an independently reviewed,
+comparable normal collection. The minimum is six fit cycles and 40 held-out
+normal calibration cycles across at least four later sessions. Keep the
+subsequent test sessions reserved for evaluation.
+
+Run from the software directory with its normal environment and a complete
+local telemetry cache. Supply the recorded collection CSV and explicitly
+choose training and calibration session counts and a future activation time
+with an offset.
+
+```text
+python -m energy_monitor.adaptive_warning --database telemetry.db --collection reviewed.csv --baseline-group kettle-room --train-sessions 3 --validation-sessions 4 --effective-at 2026-12-01T10:00:00+08:00
+```
+
+Review the resulting digest-named file in `config/pilot/adaptive-warnings`
+before publishing it. Keep previous files and publish before the new effective
+time. Each audited cycle uses the policy effective at its start. Calibration
+uses the finite-sample 95th-percentile upper rank and requires the score to
+exceed that rank and the native boundary, with ties excluded. Correlated runs
+and changed operating conditions can affect warning frequency. An independent
+test set is still needed to evaluate warning performance.

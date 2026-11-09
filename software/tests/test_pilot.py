@@ -165,8 +165,11 @@ for record in ref['cycles']:
     assert len(app.dataframe) == 6
     assert app.subheader[0].value == "Anomaly score"
     assert app.expander[0].label == "How the current anomaly score was calculated"
-    assert app.expander[1].label == "Rolling baseline deviation details"
-    assert app.expander[2].label == "Original Isolation Forest assessment"
+    assert app.expander[1].label == "Native model boundary and adaptive warning policy"
+    assert app.expander[2].label == "Rolling baseline deviation details"
+    assert app.expander[3].label == "Original Isolation Forest assessment"
+    assert any("Adaptive warning threshold: calibration pending" in c.value for c in app.caption)
+    assert {"Normal pattern", "Unusual pattern"} <= {m.value for m in app.markdown}
     assert any("10 eligible training cycles" in c.value for c in app.caption)
     assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)
     assert any("Training-reference cycle" in c.value for c in app.caption)
