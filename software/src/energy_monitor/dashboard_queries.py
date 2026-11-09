@@ -43,6 +43,7 @@ class CycleListItem(BaseModel):
     energy_label: str = "Measured cycle energy"
     charge_text: str
     tariff_estimate: TariffEstimate | None = None
+    energy_eligible: bool = True
     effective_volume: VolumeClass
     cycle_label: str | None = None
     record_source: Literal["measured", "manual"]
@@ -187,6 +188,9 @@ def _cycle_item(
         energy_label=cycle_energy_label(summary, str(row.get("record_source", "measured"))),
         charge_text=_charge_text(estimate),
         tariff_estimate=estimate,
+        energy_eligible=not (
+            summary.invalid_sample_count or summary.missing_sample_count or summary.gap_count
+        ),
         effective_volume=VolumeClass(str(row["effective_volume"])),
         cycle_label=(
             None if row.get("custom_label") is None else str(row["custom_label"])

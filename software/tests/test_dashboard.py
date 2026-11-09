@@ -319,6 +319,90 @@ def test_tariff_disclosure_names_provenance_and_exclusions() -> None:
     assert "energy-efficiency incentive" in text
 
 
+def test_tariff_disclosure_shows_both_saved_base_calculations() -> None:
+    estimate = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 11, 9, tzinfo=UTC), None,
+        load_tariff_catalog(CATALOG_PATH),
+    )
+    text = tariff_disclosure_text(estimate)
+    assert "27.03 + 4.55 + 12.85 = 44.43 sen/kWh" in text
+    assert "37.03 + 4.55 + 12.85 = 54.43 sen/kWh" in text
+    assert "RM 0.0362202" in text
+    assert "RM 0.006097" in text
+    assert "RM 0.017219" in text
+    assert "RM 0.0595362" in text and "RM 0.0729362" in text
+    assert "RM 0.060–0.073" in text
+    assert "AFA is unresolved" in text
+
+
+def test_tariff_disclosure_explains_applied_afa_and_unavailable_rates() -> None:
+    catalog = load_tariff_catalog(CATALOG_PATH)
+    known = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 11, 9, tzinfo=UTC), Decimal("900"), catalog,
+    )
+    text = tariff_disclosure_text(known)
+    assert "AFA: 0.1340 kWh × 3.60 sen/kWh ÷ 100 = RM 0.004824" in text
+    assert "48.03 sen/kWh ÷ 100 = RM 0.0643602" in text
+    assert "Displayed variable cycle charge: RM 0.0644" in text
+    unknown = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 12, 9, tzinfo=UTC), Decimal("900"), catalog,
+    )
+    assert "Displayed variable cycle charge: Unavailable" in tariff_disclosure_text(unknown)
+
+
+def test_cycle_charge_totals_keep_incompatible_bases_separate() -> None:
+    from dashboard.components import _cycle_charge_totals
+
+    catalog = load_tariff_catalog(CATALOG_PATH)
+    when = datetime(2026, 11, 9, tzinfo=UTC)
+    estimates = [estimate_cycle_charge(Decimal("0.1340"), when, use, catalog)
+                 for use in (None, Decimal("900"), None)]
+    assert [value for _, value in _cycle_charge_totals(estimates)] == [
+        "RM 0.119–0.146", "RM 0.0644",
+    ]
+
+
+def test_cycle_summary_totals_separate_sources_and_exclude_ineligible_rows(tmp_path):
+    from energy_monitor.dashboard_queries import list_cycle_items
+
+    store = SQLiteTelemetryStore(build_dashboard_cycle_database(tmp_path))
+    cycle, = list_cycle_items(store)
+    estimate = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 11, 9, tzinfo=UTC), None,
+        load_tariff_catalog(CATALOG_PATH),
+    )
+    script = f"""
+from uuid import UUID
+from dashboard.components import render_cycle_totals
+from energy_monitor.dashboard_queries import CycleListItem
+from energy_monitor.models import TariffEstimate
+cycle = CycleListItem.model_validate_json({cycle.model_dump_json()!r})
+estimate = TariffEstimate.model_validate_json({estimate.model_dump_json()!r})
+cycle = cycle.model_copy(update={{"energy_kwh": .134, "duration_seconds": 252,
+                                 "tariff_estimate": estimate}})
+sensor = cycle.model_copy(update={{"source_label": "Sensor mode"}})
+second = sensor.model_copy(update={{"cycle_id": UUID(int=2)}})
+incomplete = sensor.model_copy(update={{"cycle_id": UUID(int=3), "cycle_label": "Incomplete"}})
+manual = cycle.model_copy(update={{"cycle_id": UUID(int=4), "source_label": "Manual",
+                                 "tariff_estimate": None}})
+render_cycle_totals([sensor, sensor, second, incomplete, manual])
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert [m.value for m in app.metric if m.label == "Completed cycles"] == ["2", "1"]
+    assert [m.value for m in app.metric if m.label == "Total energy"] == [
+        "0.2680 kWh", "0.1340 kWh",
+    ]
+    assert [m.value for m in app.metric if m.label == "Operating duration"] == [
+        "0h 8m 24s", "0h 4m 12s",
+    ]
+    assert [m.value for m in app.metric if m.label == "Estimated variable charge"] == [
+        "RM 0.119–0.146", "Unavailable",
+    ]
+    assert any("1 incomplete cycle excluded" in c.value for c in app.caption)
+    assert any("1 cost unavailable" in c.value for c in app.caption)
+
+
 def test_user_created_cycle_label_is_saved_and_reusable(
     tmp_path: Path,
     monkeypatch: object,

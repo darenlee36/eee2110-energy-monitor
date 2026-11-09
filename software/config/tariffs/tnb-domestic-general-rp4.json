@@ -15,7 +15,7 @@
       "retail_waiver_max_monthly_kwh": "600",
       "source_url": "https://myenergystats.st.gov.my/documents/d/guest/tariff-tnb-pdf-1",
       "source_published_date": "2025-06-20",
-      "last_checked_date": "2026-09-12"
+      "last_checked_date": "2026-11-09"
     }
   ],
   "afa_periods": [
@@ -23,9 +23,36 @@
       "version": "tnb-afa-2026-09",
       "month": "2026-09",
       "rate_sen_per_kwh": "3.67",
-      "exempt_max_monthly_kwh": "600",
+      "exempt_max_monthly_kwh": "800",
       "source_url": "https://www.singlebuyer.com.my/Generation-Info-Tariff/automatic-fuel-adjustment-(afa)",
-      "last_checked_date": "2026-09-12"
+      "exemption_source_url": "https://www.st.gov.my/node/5743",
+      "last_checked_date": "2026-11-09"
+    },
+    {
+      "version": "tnb-afa-2026-10",
+      "month": "2026-10",
+      "rate_sen_per_kwh": "3.61",
+      "exempt_max_monthly_kwh": "800",
+      "source_url": "https://www.st.gov.my/sites/default/files/2026-11/Notis-Kadar-AFA-bagi-Bulan-November-2026.pdf",
+      "exemption_source_url": "https://www.st.gov.my/node/5743",
+      "last_checked_date": "2026-11-09"
+    },
+    {
+      "version": "tnb-afa-2026-11",
+      "month": "2026-11",
+      "rate_sen_per_kwh": "3.60",
+      "exempt_max_monthly_kwh": "800",
+      "source_url": "https://www.st.gov.my/sites/default/files/2026-11/Notis-Kadar-AFA-bagi-Bulan-November-2026.pdf",
+      "exemption_source_url": "https://www.st.gov.my/node/5743",
+      "last_checked_date": "2026-11-09"
+    },
+    {
+      "version": "tnb-afa-exemption-2026-12",
+      "month": "2026-12",
+      "rate_sen_per_kwh": null,
+      "exempt_max_monthly_kwh": "800",
+      "source_url": "https://www.st.gov.my/node/5743",
+      "last_checked_date": "2026-11-09"
     }
   ]
 }

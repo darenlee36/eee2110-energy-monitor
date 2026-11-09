@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections import defaultdict
 from datetime import UTC, datetime, time
+from decimal import Decimal
 from statistics import fmean
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -11,16 +13,24 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from energy_monitor.dashboard_queries import CycleDetail, CycleListItem, LiveView, get_cycle_detail
+from energy_monitor.dashboard_queries import (
+    CATALOG_PATH,
+    CycleDetail,
+    CycleListItem,
+    LiveView,
+    get_cycle_detail,
+)
 from energy_monitor.metrics import sampling_gap_counts
 from energy_monitor.models import (
     ConnectionState,
+    CycleStatus,
     ManualCycleRecord,
     TariffEstimate,
     TelemetryReading,
 )
 from energy_monitor.report_narrative import FAILURE_MESSAGES, narrative_sections
 from energy_monitor.storage import SQLiteTelemetryStore
+from energy_monitor.tariffs import load_tariff_catalog, tariff_calculation_rates
 
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 CHART_FONT = "Cascadia Code, SFMono-Regular, Consolas, Liberation Mono, monospace"
@@ -1188,6 +1198,95 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
     return items[cells[0][0]].cycle_id if cells and cells[0][0] < len(items) else None
 
 
+def _operating_duration(seconds: int) -> str:
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}h {minutes}m {seconds}s"
+
+
+def _cycle_charge_totals(estimates: list[TariffEstimate]) -> list[tuple[str, str]]:
+    groups = defaultdict(list)
+    for estimate in estimates:
+        key = (
+            estimate.provider, estimate.scheme, estimate.tariff_version,
+            estimate.monthly_household_kwh, estimate.gross_variable_rate_sen_per_kwh,
+            estimate.afa_version if estimate.afa_rate_sen_per_kwh else None,
+            estimate.included_components, estimate.excluded_components,
+            estimate.unresolved_components, estimate.amount_range_rm is not None,
+        )
+        groups[key].append(estimate)
+    totals = []
+    for group in groups.values():
+        first = group[0]
+        if first.amount_range_rm is not None:
+            low = sum(estimate.amount_range_rm[0] for estimate in group)
+            high = sum(estimate.amount_range_rm[1] for estimate in group)
+            amount = f"RM {low:.3f}–{high:.3f}"
+            basis = "base tariff range · household usage unresolved"
+        else:
+            amount = f"RM {sum(estimate.amount_rm for estimate in group):.4f}"
+            basis = f"{first.gross_variable_rate_sen_per_kwh} sen/kWh"
+            if first.monthly_household_kwh is not None:
+                basis += f" · {first.monthly_household_kwh} kWh/month household usage"
+            if first.afa_rate_sen_per_kwh:
+                basis += f" · {first.afa_period} AFA"
+        totals.append((f"{first.provider} {first.scheme} · {basis} · {len(group)} cycles", amount))
+    return totals
+
+
+def render_cycle_totals(items: list[CycleListItem]) -> None:
+    unique = {item.cycle_id: item for item in items}
+    by_source = defaultdict(list)
+    for item in unique.values():
+        if (item.status is CycleStatus.COMPLETED
+                and (item.cycle_label or "").strip().casefold() != "incomplete"):
+            by_source[item.source_label].append(item)
+    with st.container(border=True):
+        st.subheader("Filtered cycle totals")
+        excluded = len(unique) - sum(map(len, by_source.values()))
+        if excluded:
+            noun = "cycle" if excluded == 1 else "cycles"
+            st.caption(f"{excluded:,} incomplete {noun} excluded.")
+        if not by_source:
+            st.caption("No completed cycles to total for these filters.")
+        for source, cycles in by_source.items():
+            st.markdown(f"**{source}**")
+            energy_cycles = [item for item in cycles if item.energy_eligible]
+            energy = sum(Decimal(str(item.energy_kwh)) for item in energy_cycles)
+            duration = sum(item.duration_seconds for item in cycles)
+            costs = [
+                estimate for item in energy_cycles
+                if (estimate := item.tariff_estimate) is not None
+                and (estimate.amount_rm is not None or estimate.amount_range_rm is not None)
+            ]
+            totals = _cycle_charge_totals(costs)
+            cost_text = "Unavailable" if not totals else totals[0][1]
+            if len(totals) > 1:
+                cost_text = "See breakdown"
+            counts = st.columns(3)
+            counts[0].metric("Completed cycles", f"{len(cycles):,}")
+            counts[1].metric(
+                "Total energy", f"{energy:.4f} kWh" if energy_cycles else "Unavailable",
+            )
+            counts[2].metric("Operating duration", _operating_duration(duration))
+            averages = st.columns(3)
+            averages[0].metric("Estimated variable charge", cost_text)
+            averages[1].metric("Average energy",
+                               f"{energy / len(energy_cycles):.4f} kWh"
+                               if energy_cycles else "Unavailable")
+            averages[2].metric("Average duration",
+                               _operating_duration(round(duration / len(cycles))))
+            if len(totals) > 1:
+                for basis, amount in totals:
+                    st.caption(f"{basis} · {amount}")
+            st.caption(
+                f"{len(cycles) - len(energy_cycles)} energy unavailable · "
+                f"{len(cycles) - len(costs)} cost unavailable · "
+                f"{sum(estimate.status.value == 'partial' for estimate in costs)} qualified "
+                "estimate(s). Charges cover available cycles only and exclude household bill items."
+            )
+
+
 def render_cycle_receipt(detail: CycleDetail) -> None:
     summary = detail.summary
     status_class = {
@@ -1322,25 +1421,42 @@ def tariff_disclosure_text(
     estimate: TariffEstimate,
     energy_label: str = "Measured cycle energy",
 ) -> str:
-    month = estimate.occurred_at.strftime("%B %Y")
-    amounts = "Unavailable"
-    if estimate.amount_rm is not None:
-        amounts = f"RM {estimate.amount_rm:.4f}"
-    elif estimate.amount_range_rm is not None:
-        low, high = estimate.amount_range_rm
-        amounts = f"RM {low:.4f} to RM {high:.4f}"
-    afa_rate = (
-        estimate.afa_rate_sen_per_kwh
-        if estimate.afa_rate_sen_per_kwh is not None
-        else "eligibility unresolved"
-    )
-    rate_lines = (
-        f"Energy rate: {estimate.energy_rate_sen_per_kwh or 'tier unresolved'} sen/kWh; "
-        f"capacity: {estimate.capacity_rate_sen_per_kwh or 'unavailable'} sen/kWh; "
-        f"network: {estimate.network_rate_sen_per_kwh or 'unavailable'} sen/kWh; "
-        f"AFA: {afa_rate} sen/kWh."
-    )
-    afa_name = f"{month} AFA" if estimate.afa_period else "AFA unavailable"
+    afa_name = "AFA unavailable"
+    if estimate.afa_period:
+        try:
+            month = datetime.strptime(estimate.afa_period, "%Y-%m").strftime("%B %Y")
+        except ValueError:
+            month = estimate.afa_period
+        afa_name = f"{month} AFA"
+        if estimate.afa_rate_sen_per_kwh is not None:
+            afa_name += f" applied at {estimate.afa_rate_sen_per_kwh:+.2f} sen/kWh"
+    calculations = []
+    cases = tariff_calculation_rates(estimate, load_tariff_catalog(CATALOG_PATH))
+    for tier, rates in cases:
+        energy = estimate.energy_kwh
+        total = sum(rates.values())
+        calculation = [f"**{tier}**", ""]
+        calculation.extend(
+            f"- {name}: {energy} kWh × {rate} sen/kWh ÷ 100 "
+            f"= RM {(energy * rate / 100).normalize():f}"
+            for name, rate in rates.items()
+        )
+        calculation += [
+            "",
+            f"Combined variable rate: {' + '.join(str(rate) for rate in rates.values())} "
+            f"= {total} sen/kWh.",
+            "",
+            f"**{energy} kWh × {total} sen/kWh ÷ 100 "
+            f"= RM {(energy * total / 100).normalize():f}**",
+        ]
+        calculations.append("\n".join(calculation))
+    if estimate.amount_range_rm is not None:
+        calculations.insert(
+            0, "Household usage is unknown, so both base tiers are shown. "
+            "AFA is unresolved and excluded from this range.",
+        )
+    if not cases:
+        calculations.append("A component calculation could not be verified for this estimate.")
     unresolved = ", ".join(item.replace("_", "-") for item in estimate.unresolved_components)
     component_names = {
         "energy_efficiency_incentive": "energy-efficiency incentive",
@@ -1355,11 +1471,12 @@ def tariff_disclosure_text(
     sources = "\n".join(f"- Source: {url}" for url in estimate.source_urls)
     return (
         f"**{estimate.provider} {estimate.scheme}**  \n"
-        f"Tariff version: {estimate.tariff_version or 'unavailable'}; effective "
+        f"Tariff version: {estimate.tariff_version or 'unavailable'} · effective "
         f"{estimate.tariff_effective_from or 'unknown'} to "
         f"{estimate.tariff_effective_to or 'unknown'}.  \n"
-        f"{afa_name}. {energy_label}: {estimate.energy_kwh} kWh.  \n"
-        f"{rate_lines}  \nEstimated gross variable cycle charge: {amounts}.  \n"
+        f"{afa_name}. {energy_label}: {estimate.energy_kwh} kWh.\n\n"
+        + "\n\n".join(calculations) + "\n\n"
+        f"**Displayed variable cycle charge: {_charge_value(estimate)}**  \n"
         f"Unresolved: {unresolved or 'none'}.  \nExcluded: {exclusions or 'none'}.  \n"
         f"Last checked: {estimate.last_checked_date or 'unavailable'}.  \n"
         f"{sources}  \n**This is not a complete household bill.**"

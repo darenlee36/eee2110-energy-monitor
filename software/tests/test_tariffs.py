@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from energy_monitor.models import TariffEstimateStatus
 from energy_monitor.tariffs import estimate_cycle_charge, load_tariff_catalog
 
@@ -28,17 +30,39 @@ def test_known_300_kwh_household_uses_base_components_and_afa_exemption() -> Non
     assert "energy_efficiency_incentive" in estimate.excluded_components
 
 
-def test_800_kwh_household_applies_september_2026_afa() -> None:
+@pytest.mark.parametrize(("month", "rate"), [(9, "3.67"), (10, "3.61"), (11, "3.60")])
+def test_temporary_afa_exemption_and_published_rates(month, rate) -> None:
+    catalog = load_tariff_catalog(CATALOG_PATH)
+    when = datetime(2026, month, 12, tzinfo=UTC)
     estimate = estimate_cycle_charge(
-        Decimal("0.087"),
-        datetime(2026, 9, 12, tzinfo=UTC),
-        Decimal("800"),
-        load_tariff_catalog(CATALOG_PATH),
+        Decimal("0.087"), when, Decimal("800"), catalog,
     )
+    assert estimate.afa_rate_sen_per_kwh == Decimal("0")
+    assert estimate.amount_rm == Decimal("0.0387")
 
-    assert estimate.afa_rate_sen_per_kwh == Decimal("3.67")
-    assert estimate.gross_variable_rate_sen_per_kwh == Decimal("48.10")
-    assert estimate.amount_rm == Decimal("0.0418")
+    applicable = estimate_cycle_charge(Decimal("0.087"), when, Decimal("800.01"), catalog)
+    assert applicable.afa_rate_sen_per_kwh == Decimal(rate)
+    assert applicable.gross_variable_rate_sen_per_kwh == Decimal("44.43") + Decimal(rate)
+
+
+def test_tariff_and_afa_use_malaysia_calendar_boundaries() -> None:
+    catalog = load_tariff_catalog(CATALOG_PATH)
+    november = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 10, 31, 16, tzinfo=UTC), Decimal("900"), catalog,
+    )
+    assert november.afa_period == "2026-11"
+    assert november.amount_rm == Decimal("0.0644")
+    december = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 12, 1, tzinfo=UTC), Decimal("800"), catalog,
+    )
+    assert december.afa_rate_sen_per_kwh == Decimal("0")
+    assert december.amount_rm == Decimal("0.0595")
+    assert december.afa_version is None
+    unknown_rate = estimate_cycle_charge(
+        Decimal("0.1340"), datetime(2026, 12, 1, tzinfo=UTC), Decimal("801"), catalog,
+    )
+    assert unknown_rate.status == TariffEstimateStatus.UNAVAILABLE
+    assert unknown_rate.unresolved_components == ("published_afa",)
 
 
 def test_unknown_household_usage_returns_qualified_rate_range() -> None:

@@ -21,6 +21,7 @@ from components import (
     render_cycle_filters,
     render_cycle_history,
     render_cycle_receipt,
+    render_cycle_totals,
     render_live_state,
     render_manual_cycle_entry,
     render_report_dashboard,
@@ -421,6 +422,7 @@ elif st.session_state.mode == "Cycles":
     if st.session_state.selected_cycle_id not in {str(item.cycle_id) for item in items}:
         st.session_state.selected_cycle_id = None
     selected = render_cycle_history(items)
+    render_cycle_totals(items)
     if selected is not None:
         st.session_state.selected_cycle_id = str(selected)
     if st.session_state.selected_cycle_id is None:
