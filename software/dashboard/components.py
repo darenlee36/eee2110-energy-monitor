@@ -1241,7 +1241,7 @@ def render_cycle_totals(items: list[CycleListItem]) -> None:
         if (item.status is CycleStatus.COMPLETED
                 and (item.cycle_label or "").strip().casefold() != "incomplete"):
             by_source[item.source_label].append(item)
-    with st.container(border=True):
+    with st.container(border=True, key="cycle-totals"):
         st.subheader("Filtered cycle totals")
         excluded = len(unique) - sum(map(len, by_source.values()))
         if excluded:
@@ -1417,6 +1417,12 @@ def build_cycle_figure(detail: CycleDetail, start_threshold_w: float) -> go.Figu
     return figure
 
 
+def _calculation_value(value: Decimal, *, minimum_places: int = 0) -> str:
+    whole, fraction = f"{value:.9f}".split(".")
+    fraction = fraction.rstrip("0").ljust(minimum_places, "0")
+    return f"{whole}.{fraction}" if fraction else whole
+
+
 def tariff_disclosure_text(
     estimate: TariffEstimate,
     energy_label: str = "Measured cycle energy",
@@ -1432,13 +1438,14 @@ def tariff_disclosure_text(
             afa_name += f" applied at {estimate.afa_rate_sen_per_kwh:+.2f} sen/kWh"
     calculations = []
     cases = tariff_calculation_rates(estimate, load_tariff_catalog(CATALOG_PATH))
+    energy = estimate.energy_kwh
+    energy_text = _calculation_value(energy, minimum_places=4)
     for tier, rates in cases:
-        energy = estimate.energy_kwh
         total = sum(rates.values())
         calculation = [f"**{tier}**", ""]
         calculation.extend(
-            f"- {name}: {energy} kWh × {rate} sen/kWh ÷ 100 "
-            f"= RM {(energy * rate / 100).normalize():f}"
+            f"- {name}: {energy_text} kWh × {rate} sen/kWh ÷ 100 "
+            f"= RM {_calculation_value(energy * rate / 100)}"
             for name, rate in rates.items()
         )
         calculation += [
@@ -1446,8 +1453,8 @@ def tariff_disclosure_text(
             f"Combined variable rate: {' + '.join(str(rate) for rate in rates.values())} "
             f"= {total} sen/kWh.",
             "",
-            f"**{energy} kWh × {total} sen/kWh ÷ 100 "
-            f"= RM {(energy * total / 100).normalize():f}**",
+            f"**{energy_text} kWh × {total} sen/kWh ÷ 100 "
+            f"= RM {_calculation_value(energy * total / 100)}**",
         ]
         calculations.append("\n".join(calculation))
     if estimate.amount_range_rm is not None:
@@ -1474,7 +1481,7 @@ def tariff_disclosure_text(
         f"Tariff version: {estimate.tariff_version or 'unavailable'} · effective "
         f"{estimate.tariff_effective_from or 'unknown'} to "
         f"{estimate.tariff_effective_to or 'unknown'}.  \n"
-        f"{afa_name}. {energy_label}: {estimate.energy_kwh} kWh.\n\n"
+        f"{afa_name}. {energy_label}: {energy_text} kWh.\n\n"
         + "\n\n".join(calculations) + "\n\n"
         f"**Displayed variable cycle charge: {_charge_value(estimate)}**  \n"
         f"Unresolved: {unresolved or 'none'}.  \nExcluded: {exclusions or 'none'}.  \n"

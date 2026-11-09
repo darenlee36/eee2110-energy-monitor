@@ -204,6 +204,15 @@ p,
   font-size: clamp(1.45rem, 3.2vw, 2.25rem);
 }
 
+.st-key-cycle-totals [data-testid="stMetricValue"] {
+  font-size: clamp(1.2rem, 2vw, 1.65rem);
+}
+
+.st-key-cycle-totals [data-testid="stMetricValue"] > div {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 [data-testid="stDataFrame"],
 [data-testid="stPlotlyChart"],
 [data-testid="stExpander"] {

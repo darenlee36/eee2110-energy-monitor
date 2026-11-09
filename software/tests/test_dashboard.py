@@ -321,10 +321,11 @@ def test_tariff_disclosure_names_provenance_and_exclusions() -> None:
 
 def test_tariff_disclosure_shows_both_saved_base_calculations() -> None:
     estimate = estimate_cycle_charge(
-        Decimal("0.1340"), datetime(2026, 11, 9, tzinfo=UTC), None,
+        Decimal("0.13400000000000034"), datetime(2026, 11, 9, tzinfo=UTC), None,
         load_tariff_catalog(CATALOG_PATH),
     )
     text = tariff_disclosure_text(estimate)
+    assert "0.1340 kWh" in text and "0.13400000000000034" not in text
     assert "27.03 + 4.55 + 12.85 = 44.43 sen/kWh" in text
     assert "37.03 + 4.55 + 12.85 = 54.43 sen/kWh" in text
     assert "RM 0.0362202" in text
