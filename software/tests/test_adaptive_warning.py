@@ -139,7 +139,7 @@ def test_policy_integrity_rejects_training_calibration_overlap(tmp_path: Path):
         warning.load_warning_policy(path)
 
 
-def test_insights_follow_native_result_dominant_measurement_and_quality():
+def test_insights_follow_dashboard_cutoff_dominant_measurement_and_quality():
     model = {"training_reference": {"cycles": [
         {"features": {"duration_seconds": 200, "average_power_w": 1800}},
     ]}}
@@ -148,18 +148,18 @@ def test_insights_follow_native_result_dominant_measurement_and_quality():
         **SCOPE, **row["features"], "meter_energy_kwh": 0.12,
         "peak_power_w": 1900, "assessment": "normal",
     }
-    normal = model_pattern_insight(row, {"score": 49, "raw_decision": .01}, model)
-    unusual = model_pattern_insight(row, {"score": 51, "raw_decision": -.01}, model)
+    normal = model_pattern_insight(row, {"score": 59.99}, model)
+    unusual = model_pattern_insight(row, {"score": 60}, model)
     policy = {"threshold": 62}
     flagged = model_pattern_insight(row, {"score": 62, "raw_decision": -.12}, model, policy)
     assert [i["pattern"] for i in (normal, unusual, flagged)] == ["normal", "unusual", "warning"]
     assert "+40.0 s (+20.0%)" in unusual["comparison"]
     assert "+54.0 W (+3.0%)" in unusual["comparison"]
-    assert "within" in cycle_presentation_insights(cycle, normal)["possibilities"][0]
+    assert "below the 60 / 100" in cycle_presentation_insights(cycle, normal)["possibilities"][0]
     assert "heating times" in cycle_presentation_insights(cycle, unusual)["actions"][0]
     assert "fault" in cycle_presentation_insights(cycle, flagged)["actions"][-1]
     power_row = {"features": {"duration_seconds": 202, "average_power_w": 2000}}
-    power = model_pattern_insight(power_row, {"score": 58, "raw_decision": -.08}, model)
+    power = model_pattern_insight(power_row, {"score": 63}, model)
     assert "voltage" in cycle_presentation_insights(cycle, power)["actions"][0]
     assert "connectivity" in cycle_presentation_insights(
         {**cycle, "missing_sample_count": 1}, unusual,

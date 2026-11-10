@@ -169,7 +169,10 @@ for record in ref['cycles']:
     assert app.expander[2].label == "Rolling baseline deviation details"
     assert app.expander[3].label == "Original Isolation Forest assessment"
     assert any("Adaptive warning threshold: calibration pending" in c.value for c in app.caption)
-    assert "Normal pattern" in {m.value for m in app.markdown}
+    assert app.success
+    assert all(m.value.startswith("**Normal pattern**") for m in app.success)
+    assert all(m.proto.icon == "✅" for m in app.success)
+    assert any("60 / 100" in m.value for m in app.success)
     assert app.warning
     assert all(w.value.startswith("**Unusual pattern**") for w in app.warning)
     assert all(w.proto.icon == "⚠️" for w in app.warning)

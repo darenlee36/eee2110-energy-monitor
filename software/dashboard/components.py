@@ -33,6 +33,7 @@ from energy_monitor.storage import SQLiteTelemetryStore
 from energy_monitor.tariffs import load_tariff_catalog, tariff_calculation_rates
 
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
+ANOMALY_ADVISORY_THRESHOLD = 60.0
 CHART_FONT = "Cascadia Code, SFMono-Regular, Consolas, Liberation Mono, monospace"
 REPORT_SOURCES = {
     "simulated": ("Demonstration data", "#E22DFF"),
@@ -263,7 +264,10 @@ def render_cycle_assessment(
             icon="⚠️",
         )
     else:
-        st.write("Normal pattern")
+        st.success(
+            f"**Normal pattern** · Below the {ANOMALY_ADVISORY_THRESHOLD:g} / 100 advisory cutoff.",
+            icon="✅",
+        )
 
     if current is not None:
         st.caption(
@@ -293,8 +297,9 @@ def render_cycle_assessment(
         member = row["cycle_id"] in reference_model["training_cycle_ids"]
         st.caption("In-sample training cycle." if member else "Unseen at model fitting.")
         st.write(
-            "The native boundary marks model unusualness. A separate warning cutoff uses "
-            "scores from independently reviewed normal cycles held out of the warning model fit."
+            f"The dashboard shows Unusual pattern at {ANOMALY_ADVISORY_THRESHOLD:g} / 100 "
+            "or higher. The native boundary is part of the model. The adaptive warning cutoff "
+            "uses scores from independently reviewed normal cycles held out of the warning fit."
         )
         if policy:
             st.caption(
@@ -399,7 +404,9 @@ def model_pattern_insight(row: dict, prediction: dict, model: dict,
     duration_delta = row["features"]["duration_seconds"] - duration_mean
     power_delta = row["features"]["average_power_w"] - power_mean
     duration_pct, power_pct = 100 * duration_delta / duration_mean, 100 * power_delta / power_mean
-    pattern = "normal" if prediction["raw_decision"] >= 0 else "unusual"
+    pattern = (
+        "unusual" if prediction["score"] >= ANOMALY_ADVISORY_THRESHOLD else "normal"
+    )
     if policy and prediction["score"] >= policy["threshold"]:
         pattern = "warning"
     return {
@@ -630,7 +637,9 @@ def cycle_presentation_insights(cycle: dict, insight: dict | None = None) -> dic
                 "Review the trace and collection notes. A score alone cannot establish a fault."
             )
     elif insight:
-        possibilities = ["Duration and power together fall within the native model boundary."]
+        possibilities = [
+            f"The score is below the {ANOMALY_ADVISORY_THRESHOLD:g} / 100 dashboard cutoff."
+        ]
         actions = ["Check repeatability at the same water volume and starting temperature."]
     else:
         possibilities = ["Water volume and starting conditions can change duration and energy."]
