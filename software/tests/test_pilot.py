@@ -165,7 +165,7 @@ for record in ref['cycles']:
     assert len(app.dataframe) == 6
     assert app.subheader[0].value == "Anomaly score"
     assert app.expander[0].label == "How the current anomaly score was calculated"
-    assert app.expander[1].label == "Native model boundary and adaptive warning policy"
+    assert app.expander[1].label == "Advisory cutoff and adaptive warning"
     assert app.expander[2].label == "Rolling baseline deviation details"
     assert app.expander[3].label == "Original Isolation Forest assessment"
     assert any("Adaptive warning threshold: calibration pending" in c.value for c in app.caption)

@@ -201,7 +201,7 @@ def render_anomaly_assessment(report: dict) -> None:
 def render_cycle_assessment(
     cycle: dict, store: SQLiteTelemetryStore | None, *, show_insights: bool = False,
 ) -> tuple[dict | None, dict] | None:
-    from energy_monitor.adaptive_warning import NATIVE_BOUNDARY, assess_warning
+    from energy_monitor.adaptive_warning import assess_warning
     from energy_monitor.experimental_if import (
         assess_current_model,
         assess_selected_cycle,
@@ -289,17 +289,17 @@ def render_cycle_assessment(
         st.caption(f"Adaptive warning threshold: {policy['threshold']:.2f} / 100")
     else:
         st.caption("Adaptive warning threshold: calibration pending")
-    with st.expander("Native model boundary and adaptive warning policy"):
+    with st.expander("Advisory cutoff and adaptive warning"):
         st.write(
-            f"Score {reference_prediction['score']:.2f} / 100 · native decision boundary "
-            f"{NATIVE_BOUNDARY:g} / 100 · model {reference_model['artifact_sha256'][:12]}."
+            f"Score {reference_prediction['score']:.2f} / 100 · "
+            f"model {reference_model['artifact_sha256'][:12]}."
         )
         member = row["cycle_id"] in reference_model["training_cycle_ids"]
         st.caption("In-sample training cycle." if member else "Unseen at model fitting.")
         st.write(
             f"The dashboard shows Unusual pattern at {ANOMALY_ADVISORY_THRESHOLD:g} / 100 "
-            "or higher. The native boundary is part of the model. The adaptive warning cutoff "
-            "uses scores from independently reviewed normal cycles held out of the warning fit."
+            "or higher. The adaptive warning cutoff uses scores from independently reviewed "
+            "normal cycles held out of the warning fit."
         )
         if policy:
             st.caption(
@@ -351,8 +351,6 @@ def render_cycle_assessment(
     with st.expander("Original Isolation Forest assessment"):
         model = release["model"]
         st.metric("Original Isolation Forest anomaly score", f"{row['score']:.2f} / 100")
-        assessment = "Outside" if row["raw_decision"] < 0 else "Within"
-        st.write(f"{assessment} the experimental model threshold")
         role = "Training-reference cycle" if row["reference_member"] else "Unseen at model fitting"
         st.caption(
             f"{role} · {len(model['training_cycle_ids'])} frozen training cycles · "
@@ -386,8 +384,7 @@ def render_cycle_assessment(
             f"3. Multiply the raw score by −100 and bound it to 0–100. "
             f"`−100 × ({row['raw_score']:.9f}) = {row['score']:.2f}`."
         )
-        st.caption(f"Decision function {row['raw_decision']:+.9f} · Native boundary 50 / 100 · "
-                   f"Mapping {release['score_mapping']}. Energy is shown separately.")
+        st.caption(f"Mapping {release['score_mapping']}. Energy is shown separately.")
     if show_insights:
         st.subheader("Insights & next steps")
         for messages in cycle_presentation_insights(cycle, insight).values():
