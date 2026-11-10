@@ -241,7 +241,31 @@ def render_cycle_assessment(
     insight = model_pattern_insight(row, reference_prediction, reference_model, policy)
     if current is not None:
         prediction, model = current
-        st.metric("Current Isolation Forest anomaly score", f"{prediction['score']:.2f} / 100")
+        style = "alert" if not policy and insight["pattern"] == "unusual" else "standard"
+        with st.container(key=f"if-score-{style}-current-{row['cycle_id']}"):
+            st.metric("Current Isolation Forest anomaly score", f"{prediction['score']:.2f} / 100")
+    if policy:
+        style = "standard" if insight["pattern"] == "normal" else "alert"
+        with st.container(key=f"if-score-{style}-frozen-{row['cycle_id']}"):
+            st.metric("Frozen warning-model score", f"{calibrated['score']:.2f} / 100")
+
+    if insight["pattern"] == "warning":
+        st.error(
+            f"**Potential anomalous appliance behaviour** · Score {calibrated['score']:.2f} "
+            f"/ 100 · adaptive threshold {policy['threshold']:.2f} / 100. "
+            "Review the readings and operating conditions before drawing conclusions.",
+            icon="⚠️",
+        )
+    elif insight["pattern"] == "unusual":
+        score = f" · {row['score']:.2f} / 100" if current is None and not policy else ""
+        st.warning(
+            f"**Unusual pattern**{score} · Compare the heating time and power with a similar run.",
+            icon="⚠️",
+        )
+    else:
+        st.write("Normal pattern")
+
+    if current is not None:
         st.caption(
             f"Experimental · {len(model['training_cycle_ids'])} eligible training cycles · "
             f"model {model['artifact_sha256'][:12]}"
@@ -258,18 +282,9 @@ def render_cycle_assessment(
             st.caption("The selected cycle contributed to this fit. Independent detection "
                        "accuracy has yet to be established.")
     if policy:
-        st.metric("Frozen warning-model score", f"{calibrated['score']:.2f} / 100")
         st.caption(f"Adaptive warning threshold: {policy['threshold']:.2f} / 100")
     else:
         st.caption("Adaptive warning threshold: calibration pending")
-    if insight["pattern"] == "warning":
-        st.warning(
-            f"Potential anomalous appliance behaviour detected. Score {calibrated['score']:.2f} "
-            f"/ 100 · adaptive threshold {policy['threshold']:.2f} / 100. "
-            "Review the measurements and operating conditions before drawing conclusions."
-        )
-    else:
-        st.write("Normal pattern" if insight["pattern"] == "normal" else "Unusual pattern")
     with st.expander("Native model boundary and adaptive warning policy"):
         st.write(
             f"Score {reference_prediction['score']:.2f} / 100 · native decision boundary "

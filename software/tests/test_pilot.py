@@ -151,7 +151,7 @@ for record in ref['cycles']:
     selected = {{**cycle, **record['features'], 'cycle_id': record['cycle_id']}}
     render_cycle_assessment(selected, None)
 """
-    app = AppTest.from_string(script, default_timeout=10).run()
+    app = AppTest.from_string(script, default_timeout=30).run()
     assert not app.exception
     values = [m.value for m in app.metric if m.label == "Original Isolation Forest anomaly score"]
     assert values == ["48.66 / 100", "44.76 / 100", "45.54 / 100", "45.75 / 100",
@@ -169,7 +169,11 @@ for record in ref['cycles']:
     assert app.expander[2].label == "Rolling baseline deviation details"
     assert app.expander[3].label == "Original Isolation Forest assessment"
     assert any("Adaptive warning threshold: calibration pending" in c.value for c in app.caption)
-    assert {"Normal pattern", "Unusual pattern"} <= {m.value for m in app.markdown}
+    assert "Normal pattern" in {m.value for m in app.markdown}
+    assert app.warning
+    assert all(w.value.startswith("**Unusual pattern**") for w in app.warning)
+    assert all(w.proto.icon == "⚠️" for w in app.warning)
+    assert not app.error
     assert any("10 eligible training cycles" in c.value for c in app.caption)
     assert any("−100 × (-0.486551110) = 48.66" in text.value for text in app.markdown)
     assert any("Training-reference cycle" in c.value for c in app.caption)

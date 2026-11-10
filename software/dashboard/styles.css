@@ -204,6 +204,10 @@ p,
   font-size: clamp(1.45rem, 3.2vw, 2.25rem);
 }
 
+[data-testid="stAppViewContainer"] [class*="st-key-if-score-alert-"] [data-testid="stMetricValue"] {
+  color: var(--danger);
+}
+
 .st-key-cycle-totals [data-testid="stMetricValue"] {
   font-size: clamp(1.2rem, 2vw, 1.65rem);
 }
