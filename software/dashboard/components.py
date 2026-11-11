@@ -240,6 +240,18 @@ def render_cycle_assessment(
     if calibrated:
         reference_prediction, reference_model = calibrated, policy["model"]
     insight = model_pattern_insight(row, reference_prediction, reference_model, policy)
+    role = ("included in model fitting" if row["cycle_id"] in reference_model["training_cycle_ids"]
+            else "unseen at model fitting")
+    warning_status = (
+        f"Calibrated warning cutoff {policy['threshold']:.2f} / 100."
+        if policy else "Adaptive warning calibration pending."
+    )
+    insight["summary"] = (
+        f"Isolation Forest score {reference_prediction['score']:.2f} / 100, "
+        f"dashboard advisory cutoff {ANOMALY_ADVISORY_THRESHOLD:g} / 100. "
+        f"This cycle was {role} for model {reference_model['artifact_sha256'][:12]}. "
+        f"{warning_status}"
+    )
     if current is not None:
         prediction, model = current
         style = "alert" if not policy and insight["pattern"] == "unusual" else "standard"
@@ -430,8 +442,8 @@ def rolling_power_insights(cycle: dict, rolling: dict) -> list[str]:
 
 def render_report_dashboard(
     report: dict, store: SQLiteTelemetryStore | None, *, cycle_names: dict[str, str],
-) -> None:
-    """Readable report presentation; persistence and generation stay in app.py."""
+) -> dict | None:
+    """Render the saved report and return the displayed single-cycle assessment."""
     evidence = report["evidence_snapshot"]
     cycles = evidence["cycles"]
     names = [cycle_names[str(cycle["cycle_id"])] for cycle in cycles]
@@ -583,6 +595,7 @@ def render_report_dashboard(
         else:
             st.warning(FAILURE_MESSAGES[evidence["codex_review"]["failure"]])
     render_tariff_disclosure(estimate, "Cycle energy")
+    return insight if len(cycles) == 1 else None
 
 
 def cycle_presentation_insights(cycle: dict, insight: dict | None = None) -> dict[str, list[str]]:

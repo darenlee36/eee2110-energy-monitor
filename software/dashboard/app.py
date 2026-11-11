@@ -9,10 +9,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
+import plotly.graph_objects as go
 import streamlit as st
 from components import (
     build_cycle_figure,
     build_electrical_figure,
+    build_report_trace,
     format_myt,
     malaysia_time,
     render_anomaly_assessment,
@@ -40,6 +42,12 @@ from energy_monitor.dashboard_queries import (
     matches_source,
 )
 from energy_monitor.models import CycleDetectionSettings, CycleStatus
+from energy_monitor.report_ai import (
+    MODEL,
+    analysis_identity,
+    analysis_report,
+    generate_analysis,
+)
 from energy_monitor.reporting import build_report
 from energy_monitor.simulator import batch_readings, generate_readings
 from energy_monitor.storage import SQLiteTelemetryStore
@@ -219,6 +227,76 @@ def render_owner_cycle_settings() -> None:
                 st.success(f"{selected_name} rules saved for future cycles · {revision}")
 
 
+def render_saved_ai_analysis(report: dict, assessment: dict | None, cycle_names: dict) -> None:
+    if not isinstance(store, SupabaseCycleStore) or os.getenv("ENERGY_MONITOR_AI_REPORTS") != "1":
+        return
+    try:
+        source = analysis_report(report)
+    except (ValueError, KeyError, TypeError):
+        return
+    st.subheader("AI-assisted analysis")
+    try:
+        analysis = store._rpc("read_report_ai_analysis", analysis_identity(source))
+        if analysis is None and store.can_edit:
+            api_key = os.getenv("OPENAI_API_KEY", "").strip()
+            if not api_key:
+                st.info("Hosted AI analysis needs an OpenAI API key.")
+            elif st.button("Generate AI Analysis", key=f"generate_ai_{source.report_id}"):
+                with st.spinner("Generating analysis from saved measurements…"):
+                    analysis = generate_analysis(store, source, assessment, api_key)
+    except ValueError as exc:
+        st.warning(str(exc))
+        return
+    if analysis is None:
+        if not store.can_edit:
+            st.caption("An owner can generate an analysis for this report.")
+        return
+    if not isinstance(analysis, dict):
+        st.warning("The saved analysis could not be read.")
+        return
+    if "error" in analysis:
+        st.caption(analysis["error"])
+        return
+    if "overview" not in analysis:
+        st.caption("Generation is in progress or its result has not been confirmed.")
+        return
+
+    st.markdown("#### Performance summary")
+    st.write(analysis["overview"])
+    st.markdown("#### Anomaly and baseline analysis")
+    st.write(analysis["anomaly"])
+    headings = {"findings": "Key findings", "explanations": "Possible explanations",
+                "actions": "Recommended actions"}
+    for group, heading in headings.items():
+        lines = [line for line in analysis["sections"][group] if line != analysis["overview"]]
+        if lines:
+            st.markdown(f"#### {heading}")
+            for line in lines:
+                st.write(f"• {line}")
+
+    cycles = source.evidence_snapshot["cycles"]
+    if source.kind == "cycle":
+        figure = build_report_trace(cycles[0], "Power")
+    else:
+        names = [cycle_names[str(c["cycle_id"])] for c in cycles]
+        power = [c["average_power_w"] if c["eligible_for_totals"] else None for c in cycles]
+        figure = go.Figure(go.Bar(x=names, y=power, marker_color="#4bdeeb"))
+        figure.add_hline(y=sum(p for p in power if p is not None) /
+                        sum(p is not None for p in power), line_dash="dot",
+                        annotation_text="Mean of included cycles")
+        figure.update_layout(title="Average active power by cycle", yaxis_title="Power (W)",
+                             height=320, template="plotly_dark")
+        st.caption("Cycles excluded by quality checks are left blank.")
+    if figure is not None:
+        render_resettable_chart(figure, chart_key=f"ai_report_{source.report_id}")
+    st.caption(f"OpenAI {MODEL} · {format_myt(analysis['generated_at'])} · "
+               f"Source report {source.report_id}")
+    if usage := analysis.get("usage"):
+        st.caption(
+            f"{usage['input_tokens']:,} input tokens · {usage['output_tokens']:,} output tokens"
+        )
+
+
 def render_reports() -> None:
     st.header("Reports")
 
@@ -256,7 +334,11 @@ def render_reports() -> None:
                   if matches_source(c.get("data_origin", "unknown"),
                                     c.get("record_source", "measured"), source_filter)]
         selected_report = None
-        if can_edit and cycles:
+        can_generate_template = can_edit or (
+            isinstance(store, SupabaseCycleStore) and store.can_edit
+            and os.getenv("ENERGY_MONITOR_AI_REPORTS") == "1"
+        )
+        if can_generate_template and cycles:
             with st.expander("Generate template report", expanded=True):
                 cycle_by_id = {c["cycle_id"]: c for c in cycles}
                 cycle_id = st.selectbox(
@@ -349,7 +431,8 @@ def render_reports() -> None:
         sources = ", ".join(sorted(report["evidence_snapshot"]["source_counts"]))
         st.caption(f"Coverage: {format_myt(report['period_start'])} – "
                    f"{format_myt(report['period_end'])}")
-        render_report_dashboard(report, store, cycle_names=cycle_names)
+        assessment = render_report_dashboard(report, store, cycle_names=cycle_names)
+        render_saved_ai_analysis(report, assessment, cycle_names)
         with st.expander("Technical details and saved evidence"):
             st.markdown("**Model evidence at report generation**")
             render_anomaly_assessment(report)

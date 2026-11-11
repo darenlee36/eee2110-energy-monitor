@@ -1,0 +1,204 @@
+import json
+
+import httpx
+import pytest
+from test_reporting import seeded_cycles
+
+from energy_monitor.report_ai import (
+    MODEL,
+    AnalysisError,
+    analysis_evidence,
+    analysis_report,
+    generate_analysis,
+    select_insights,
+)
+from energy_monitor.reporting import build_report
+
+
+@pytest.fixture(scope="module")
+def report_source(tmp_path_factory):
+    store, ids = seeded_cycles(tmp_path_factory.mktemp("hosted-ai"), 20)
+    # Test-only fixture for the sensor path. No genuine production claims.
+    with store._connect() as connection, connection:
+        connection.execute(
+            "UPDATE appliance_cycles SET summary_json = "
+            "json_set(summary_json, '$.data_origin', 'sensor')"
+        )
+    scope = store.fetch_cycle(ids[-1])
+    return {
+        count: build_report(
+            store, profile_id=scope["profile_id"], device_id=scope["device_id"],
+            cycle_id=ids[-1] if count == 1 else None, cycle_count=count,
+        )
+        for count in (1, 5, 10, 20)
+    }
+
+
+@pytest.mark.parametrize("count", (1, 5, 10, 20))
+def test_evidence_contains_saved_measurements_and_omits_sensitive_fields(report_source, count):
+    source = analysis_report(report_source[count])
+    evidence = analysis_evidence(source, None)
+    serialized = json.dumps(evidence)
+    assert source.device_id not in serialized
+    assert str(source.report_id) not in serialized
+    assert "sample_sequence" not in serialized
+    assert "Comparable anomaly scores were unavailable" in evidence["anomaly"]
+    if count > 1:
+        assert f"{count} of {count} cycles" in evidence["overview"]
+        assert "Total energy" in evidence["overview"]
+        assert "spread" in evidence["choices"]["findings"]
+
+
+def provider_response(selection):
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    return httpx.Response(200, request=request, json={
+        "status": "completed", "output": [{
+            "type": "message", "content": [
+                {"type": "output_text", "text": json.dumps(selection)},
+            ],
+        }],
+        "usage": {"input_tokens": 120, "output_tokens": 35},
+    })
+
+
+class ReservationStore:
+    can_edit = True
+
+    def __init__(self):
+        self.result = None
+        self.reserved = False
+        self.limit = False
+
+    def _rpc(self, name, payload):
+        if name == "read_report_ai_analysis":
+            return self.result
+        if name == "reserve_report_ai_analysis":
+            if self.limit:
+                return "daily_limit"
+            if self.reserved:
+                return "existing"
+            self.reserved = True
+            return "reserved"
+        assert name == "finish_report_ai_analysis" and self.reserved
+        self.result = payload["result"]
+        return True
+
+
+def test_owner_reservation_provider_and_reopen(report_source, monkeypatch):
+    requests = []
+    store = ReservationStore()
+    assessment = {"summary": "Experimental score 73.52 / 100.", "pattern": "unusual",
+                  "comparison": "The run drew 12.1% less mean power."}
+
+    def post(url, **kwargs):
+        assert store.reserved
+        assert url == "https://api.openai.com/v1/responses"
+        request = kwargs["json"]
+        requests.append(request)
+        assert request["model"] == MODEL and request["store"] is False and not request["tools"]
+        assert request["text"]["format"]["strict"] is True
+        assert "test-key" not in request["input"]
+        return provider_response({
+            "findings": ["baseline"], "explanations": ["unusual"], "actions": ["matched_run"],
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    source = report_source[1]
+    store.can_edit = False
+    with pytest.raises(AnalysisError, match="Owner access"):
+        generate_analysis(store, source, assessment, "test-key")
+    store.can_edit, store.limit = True, True
+    with pytest.raises(AnalysisError, match="daily"):
+        generate_analysis(store, source, assessment, "test-key")
+    assert not requests
+    store.limit = False
+    result = generate_analysis(store, source, assessment, "test-key")
+    assert result["anomaly"] == assessment["summary"]
+    assert result["sections"]["findings"] == [assessment["comparison"]]
+    assert result["usage"] == {"input_tokens": 120, "output_tokens": 35}
+    assert generate_analysis(store, source, None, "test-key") == result
+    assert len(requests) == 1
+
+
+def test_provider_rejects_unsupported_ids_and_never_retries(report_source, monkeypatch):
+    calls = []
+
+    def post(*args, **kwargs):
+        calls.append(1)
+        return provider_response({
+            "findings": ["Invented 900 W"], "explanations": ["conditions"],
+            "actions": ["log_conditions"],
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    store = ReservationStore()
+    with pytest.raises(AnalysisError, match="usable analysis"):
+        generate_analysis(store, report_source[5], None, "test-key")
+    assert "error" in generate_analysis(store, report_source[5], None, "test-key")
+    assert len(calls) == 1
+
+
+def test_provider_quota_is_reported_without_response_contents(report_source, monkeypatch):
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: httpx.Response(
+        429, request=request, json={"error": {"message": "private diagnostics"}},
+    ))
+    evidence = analysis_evidence(report_source[5], None)
+    with pytest.raises(AnalysisError, match="OpenAI reported a usage or rate limit"):
+        select_insights(evidence, "test-key")
+
+
+
+def test_hosted_reports_offer_generation_to_owner_and_reopen_saved_chart(
+    report_source, tmp_path, monkeypatch,
+):
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    from energy_monitor.cloud_edits import SupabaseCycleStore
+
+    source = report_source[5]
+    saved = source.model_dump(mode="json")
+    cloud = ReservationStore()
+    calls = []
+
+    def rpc(self, name, payload):
+        return cloud._rpc(name, payload)
+
+    def post(*args, **kwargs):
+        calls.append(1)
+        return provider_response({
+            "findings": ["spread"], "explanations": ["conditions"], "actions": ["matched_run"],
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(SupabaseCycleStore, "_rpc", rpc)
+    monkeypatch.setattr(SupabaseCycleStore, "refresh_edits", lambda self: None)
+    monkeypatch.setattr(SupabaseCycleStore, "refresh_appliance_rules", lambda self: None)
+    monkeypatch.setattr(SupabaseCycleStore, "fetch_reports", lambda self, *a: [saved])
+    monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
+    monkeypatch.setenv("ENERGY_MONITOR_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://preview.invalid")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "preview-server-only")
+    monkeypatch.setenv("ENERGY_MONITOR_DB", str(tmp_path / "cache.db"))
+    monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "owner-fixture")
+    monkeypatch.setenv("ENERGY_MONITOR_AI_REPORTS", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    dashboard = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+    app = AppTest.from_file(str(dashboard), default_timeout=30)
+    app.session_state["mode"] = "Reports"
+    app.run()
+    assert not app.exception
+    assert not any(b.label == "Generate AI Analysis" for b in app.button)
+    assert not calls
+    next(item for item in app.text_input if item.label == "Owner password").set_value(
+        "owner-fixture"
+    ).run()
+    next(b for b in app.button if b.label == "Generate AI Analysis").click().run()
+    assert not app.exception
+    assert any("5 of 5 cycles" in text.value for text in app.markdown)
+    assert any("120 input tokens" in caption.value for caption in app.caption)
+    assert len(app.get("plotly_chart")) >= 3
+    app.run()
+    assert not app.exception and len(calls) == 1
