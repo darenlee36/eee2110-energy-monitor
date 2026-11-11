@@ -89,7 +89,7 @@ class ReservationStore:
         return True
 
 
-def test_owner_reservation_provider_and_reopen(report_source, monkeypatch):
+def test_public_reservation_provider_and_reopen(report_source, monkeypatch):
     requests = []
     store = ReservationStore()
     assessment = {"summary": "Experimental score 73.52 / 100.", "pattern": "unusual",
@@ -110,9 +110,9 @@ def test_owner_reservation_provider_and_reopen(report_source, monkeypatch):
     monkeypatch.setattr(httpx, "post", post)
     source = report_source[1]
     store.can_edit = False
-    with pytest.raises(AnalysisError, match="Owner access"):
-        generate_analysis(store, source, assessment, "test-key")
-    store.can_edit, store.limit = True, True
+    with pytest.raises(AnalysisError, match="currently unavailable"):
+        generate_analysis(store, source, assessment, "")
+    store.limit = True
     with pytest.raises(AnalysisError, match="daily"):
         generate_analysis(store, source, assessment, "test-key")
     assert not requests
@@ -154,7 +154,7 @@ def test_provider_quota_is_reported_without_response_contents(report_source, mon
 
 
 
-def test_hosted_reports_offer_generation_to_owner_and_reopen_saved_chart(
+def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
     report_source, tmp_path, monkeypatch,
 ):
     from pathlib import Path
@@ -195,12 +195,8 @@ def test_hosted_reports_offer_generation_to_owner_and_reopen_saved_chart(
     app.session_state["mode"] = "Reports"
     app.run()
     assert not app.exception
-    assert not any(b.label == "Generate AI Analysis" for b in app.button)
     assert not calls
     assert all(heading.value != "AI-assisted analysis" for heading in app.subheader)
-    next(item for item in app.text_input if item.label == "Owner password").set_value(
-        "owner-fixture"
-    ).run()
     analysis_buttons = [b for b in app.button if "AI Analysis" in b.label]
     assert [b.label for b in analysis_buttons] == ["Generate AI Analysis"]
     assert not calls

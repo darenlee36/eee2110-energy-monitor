@@ -236,10 +236,10 @@ def render_saved_ai_analysis(report: dict, assessment: dict | None, cycle_names:
         return
     try:
         analysis = store._rpc("read_report_ai_analysis", analysis_identity(source))
-        if analysis is None and store.can_edit:
+        if analysis is None:
             api_key = os.getenv("OPENAI_API_KEY", "").strip()
             if not api_key:
-                st.info("Hosted AI analysis needs an OpenAI API key.")
+                st.info("AI analysis is currently unavailable.")
             elif st.button("Generate AI Analysis", key=f"generate_ai_{source.report_id}",
                            type="primary"):
                 with st.spinner("Generating analysis from saved measurements…"):
@@ -254,12 +254,10 @@ def render_saved_ai_analysis(report: dict, assessment: dict | None, cycle_names:
         st.warning("The saved analysis could not be read.")
         return
     if "error" in analysis:
-        if store.can_edit:
-            st.caption(analysis["error"])
+        st.caption(analysis["error"])
         return
     if "overview" not in analysis:
-        if store.can_edit:
-            st.caption("Generation is in progress or its result has not been confirmed.")
+        st.caption("Generation is in progress or its result has not been confirmed.")
         return
 
     with st.container(border=True):

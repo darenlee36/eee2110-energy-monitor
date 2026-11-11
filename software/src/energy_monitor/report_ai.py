@@ -215,8 +215,8 @@ def analysis_identity(source: ReportDraft) -> dict:
 
 
 def generate_analysis(store, source: ReportDraft, assessment: dict | None, api_key: str) -> dict:
-    if not store.can_edit or not api_key:
-        raise AnalysisError("Owner access and hosted AI configuration are required.")
+    if not api_key:
+        raise AnalysisError("AI analysis is currently unavailable.")
     source = analysis_report(source)
     identity = analysis_identity(source)
     existing = store._rpc("read_report_ai_analysis", identity)
