@@ -40,6 +40,14 @@ def analysis_report(report: dict | ReportDraft) -> ReportDraft:
     return source
 
 
+def anomaly_comparison(assessment: dict | None) -> str | None:
+    if not assessment:
+        return None
+    return "\n\n".join(filter(None, (
+        assessment["summary"], assessment.get("rolling_comparison"), assessment["comparison"],
+    )))
+
+
 def analysis_evidence(source: ReportDraft, assessment: dict | None) -> dict:
     evidence = source.evidence_snapshot
     cycles = evidence["cycles"]
@@ -108,7 +116,7 @@ def analysis_evidence(source: ReportDraft, assessment: dict | None) -> dict:
         actions["quality"] = "Review the saved readings of excluded runs before repeating them."
     anomaly = "Comparable anomaly scores were unavailable for this report."
     if source.kind == "cycle" and assessment:
-        anomaly = assessment["summary"]
+        anomaly = anomaly_comparison(assessment)
         findings["baseline"] = assessment["comparison"]
         if assessment["pattern"] in ("unusual", "warning"):
             if assessment.get("duration_led"):

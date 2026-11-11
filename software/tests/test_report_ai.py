@@ -118,7 +118,7 @@ def test_public_reservation_provider_and_reopen(report_source, monkeypatch):
     assert not requests
     store.limit = False
     result = generate_analysis(store, source, assessment, "test-key")
-    assert result["anomaly"] == assessment["summary"]
+    assert result["anomaly"] == f"{assessment['summary']}\n\n{assessment['comparison']}"
     assert result["sections"]["findings"] == [assessment["comparison"]]
     assert result["usage"] == {"input_tokens": 120, "output_tokens": 35}
     assert generate_analysis(store, source, None, "test-key") == result
@@ -154,8 +154,9 @@ def test_provider_quota_is_reported_without_response_contents(report_source, mon
 
 
 
+@pytest.mark.parametrize("count", (1, 5))
 def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
-    report_source, tmp_path, monkeypatch,
+    report_source, tmp_path, monkeypatch, count,
 ):
     from pathlib import Path
 
@@ -163,18 +164,32 @@ def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
 
     from energy_monitor.cloud_edits import SupabaseCycleStore
 
-    source = report_source[5]
+    source = report_source[count]
     saved = source.model_dump(mode="json")
     cloud = ReservationStore()
     calls = []
+    score_available = False
 
     def rpc(self, name, payload):
+        if name == "dashboard_cycle_annotation":
+            return {"label": "Complete"}
         return cloud._rpc(name, payload)
+
+    def assess(cycle, store):
+        assert cycle["custom_label"] == "Complete"
+        if not score_available:
+            return None
+        return (
+            {"mean_power_w": 2000.0, "power_change_w": 89.0, "cycle_count": 36},
+            {"summary": "Isolation Forest score 37.81 / 100.", "pattern": "normal",
+             "comparison": "The cycle averaged 89.0 W more than the model's training mean."},
+        )
 
     def post(*args, **kwargs):
         calls.append(1)
         return provider_response({
-            "findings": ["spread"], "explanations": ["conditions"], "actions": ["matched_run"],
+            "findings": ["spread" if count > 1 else "coverage"],
+            "explanations": ["conditions"], "actions": ["matched_run"],
         })
 
     monkeypatch.setattr(httpx, "post", post)
@@ -191,6 +206,8 @@ def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
     monkeypatch.setenv("ENERGY_MONITOR_AI_REPORTS", "1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     dashboard = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+    monkeypatch.syspath_prepend(str(dashboard.parent))
+    monkeypatch.setattr("components.render_cycle_assessment", assess)
     app = AppTest.from_file(str(dashboard), default_timeout=30)
     app.session_state["mode"] = "Reports"
     app.run()
@@ -205,10 +222,22 @@ def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
     assert all("AI Analysis" not in button.label for button in app.button)
     assert [heading.value for heading in app.subheader].count("AI-assisted analysis") == 1
     assert any(text.value == "**Performance summary**" for text in app.markdown)
-    assert any("5 of 5 cycles" in text.value for text in app.markdown)
+    if count == 5:
+        assert any("5 of 5 cycles" in text.value for text in app.markdown)
+    else:
+        assert any("The cycle ran for" in text.value for text in app.markdown)
     assert all("####" not in text.value for text in app.markdown if "cycles" in text.value)
     assert any("120 input tokens" in caption.value for caption in app.caption)
-    assert len(app.get("plotly_chart")) >= 3
+    if count == 5:
+        assert len(app.get("plotly_chart")) >= 3
+    assert "unavailable" in cloud.result["anomaly"]
+    score_available = True
     app.run()
     assert not app.exception and len(calls) == 1
     assert [heading.value for heading in app.subheader].count("AI-assisted analysis") == 1
+    if count == 1:
+        comparison = next(text.value for text in app.markdown if "37.81 / 100" in text.value)
+        assert "**2,000.0 W**" in comparison and "**36 verified cycles**" in comparison
+        assert "**+89.0 W (+4.5%)**" in comparison
+        assert not any("scores were unavailable" in t.value for t in app.markdown)
+        assert "unavailable" in cloud.result["anomaly"]

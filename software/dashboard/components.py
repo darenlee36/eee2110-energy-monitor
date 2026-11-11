@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from energy_monitor.cloud_edits import SupabaseCycleStore
 from energy_monitor.dashboard_queries import (
     CATALOG_PATH,
     CycleDetail,
@@ -548,13 +549,21 @@ def render_report_dashboard(
             "No saved reading trace available. "
             "Older/manual reports retain their recorded summary only."
         )
-    # Use the label belonging to the saved report's selected cycle.
+    # The immutable report may predate the cycle annotation or the local cache.
     score_cycle = cycle
-    if store is not None and (cached := store.fetch_cycle(cycle["cycle_id"])):
-        scope_keys = ("device_id", "profile_id", "start_sequence", "end_sequence",
-                      "status", "detection_version")
-        if all(cached.get(k) == cycle.get(k) for k in scope_keys):
-            score_cycle = {**cycle, "custom_label": cached.get("custom_label")}
+    cached = store.fetch_cycle(cycle["cycle_id"]) if store is not None else None
+    scope_keys = ("device_id", "profile_id", "start_sequence", "end_sequence",
+                  "status", "detection_version")
+    if cached is None or all(cached.get(k) == cycle.get(k) for k in scope_keys):
+        label = cached.get("custom_label") if cached is not None else None
+        if (not label and isinstance(store, SupabaseCycleStore)
+                and _report_source(cycle) == "sensor"):
+            try:
+                label = store.fetch_cycle_annotation(cycle["cycle_id"]).get("label")
+            except ValueError:
+                pass
+        if label:
+            score_cycle = {**cycle, "custom_label": label}
     assessment = render_cycle_assessment(score_cycle, store)
     rolling, insight = assessment if assessment else (None, None)
     st.subheader("Insights & next steps")
@@ -595,7 +604,18 @@ def render_report_dashboard(
         else:
             st.warning(FAILURE_MESSAGES[evidence["codex_review"]["failure"]])
     render_tariff_disclosure(estimate, "Cycle energy")
-    return insight if len(cycles) == 1 else None
+    if len(cycles) != 1 or insight is None:
+        return None
+    if rolling is not None:
+        mean = rolling["mean_power_w"]
+        delta = rolling["power_change_w"]
+        insight["rolling_comparison"] = (
+            f"Current rolling mean power is **{mean:,.1f} W** across "
+            f"**{rolling['cycle_count']} verified cycles**. This cycle averaged "
+            f"**{mean + delta:,.1f} W**, a difference of **{delta:+,.1f} W "
+            f"({100 * delta / mean:+.1f}%)**."
+        )
+    return insight
 
 
 def cycle_presentation_insights(cycle: dict, insight: dict | None = None) -> dict[str, list[str]]:

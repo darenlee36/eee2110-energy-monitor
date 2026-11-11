@@ -46,6 +46,7 @@ from energy_monitor.report_ai import (
     MODEL,
     analysis_identity,
     analysis_report,
+    anomaly_comparison,
     generate_analysis,
 )
 from energy_monitor.reporting import build_report
@@ -265,11 +266,18 @@ def render_saved_ai_analysis(report: dict, assessment: dict | None, cycle_names:
         st.markdown("**Performance summary**")
         st.markdown(analysis["overview"])
         st.markdown("**Anomaly and baseline comparison**")
-        st.markdown(analysis["anomaly"])
+        current_comparison = anomaly_comparison(assessment)
+        st.markdown(current_comparison or analysis["anomaly"])
         headings = {"findings": "Key findings", "explanations": "Possible explanations",
                     "actions": "Recommended actions"}
         for group, heading in headings.items():
             lines = [line for line in analysis["sections"][group] if line != analysis["overview"]]
+            if group == "findings" and current_comparison:
+                lines = [
+                    line for line in lines
+                    if line != "This comparison uses the measurements in the selected report."
+                    and line not in current_comparison.split("\n\n")
+                ]
             if lines:
                 st.markdown(f"**{heading}**")
                 st.markdown("\n".join(f"- {line}" for line in lines))
