@@ -50,13 +50,18 @@ def test_evidence_contains_saved_measurements_and_omits_sensitive_fields(report_
 
 
 def provider_response(selection):
+    final_text = json.dumps(selection)
     request = httpx.Request("POST", "https://api.openai.com/v1/responses")
     return httpx.Response(200, request=request, json={
-        "status": "completed", "output": [{
-            "type": "message", "content": [
-                {"type": "output_text", "text": json.dumps(selection)},
-            ],
-        }],
+        "status": "completed", "output": [
+            {"type": "message", "phase": "commentary", "content": [
+                {"type": "output_text", "text": "Comparing readings."},
+            ]},
+            {"type": "message", "phase": "final_answer", "content": [
+                {"type": "output_text", "text": final_text[:10]},
+                {"type": "output_text", "text": final_text[10:]},
+            ]},
+        ],
         "usage": {"input_tokens": 120, "output_tokens": 35},
     })
 
@@ -132,7 +137,7 @@ def test_provider_rejects_unsupported_ids_and_never_retries(report_source, monke
 
     monkeypatch.setattr(httpx, "post", post)
     store = ReservationStore()
-    with pytest.raises(AnalysisError, match="usable analysis"):
+    with pytest.raises(AnalysisError, match="did not pass validation"):
         generate_analysis(store, report_source[5], None, "test-key")
     assert "error" in generate_analysis(store, report_source[5], None, "test-key")
     assert len(calls) == 1
@@ -192,13 +197,22 @@ def test_hosted_reports_offer_generation_to_owner_and_reopen_saved_chart(
     assert not app.exception
     assert not any(b.label == "Generate AI Analysis" for b in app.button)
     assert not calls
+    assert all(heading.value != "AI-assisted analysis" for heading in app.subheader)
     next(item for item in app.text_input if item.label == "Owner password").set_value(
         "owner-fixture"
     ).run()
-    next(b for b in app.button if b.label == "Generate AI Analysis").click().run()
+    analysis_buttons = [b for b in app.button if "AI Analysis" in b.label]
+    assert [b.label for b in analysis_buttons] == ["Generate AI Analysis"]
+    assert not calls
+    analysis_buttons[0].click().run()
     assert not app.exception
+    assert all("AI Analysis" not in button.label for button in app.button)
+    assert [heading.value for heading in app.subheader].count("AI-assisted analysis") == 1
+    assert any(text.value == "**Performance summary**" for text in app.markdown)
     assert any("5 of 5 cycles" in text.value for text in app.markdown)
+    assert all("####" not in text.value for text in app.markdown if "cycles" in text.value)
     assert any("120 input tokens" in caption.value for caption in app.caption)
     assert len(app.get("plotly_chart")) >= 3
     app.run()
     assert not app.exception and len(calls) == 1
+    assert [heading.value for heading in app.subheader].count("AI-assisted analysis") == 1

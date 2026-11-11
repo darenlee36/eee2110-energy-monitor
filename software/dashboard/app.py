@@ -234,67 +234,69 @@ def render_saved_ai_analysis(report: dict, assessment: dict | None, cycle_names:
         source = analysis_report(report)
     except (ValueError, KeyError, TypeError):
         return
-    st.subheader("AI-assisted analysis")
     try:
         analysis = store._rpc("read_report_ai_analysis", analysis_identity(source))
         if analysis is None and store.can_edit:
             api_key = os.getenv("OPENAI_API_KEY", "").strip()
             if not api_key:
                 st.info("Hosted AI analysis needs an OpenAI API key.")
-            elif st.button("Generate AI Analysis", key=f"generate_ai_{source.report_id}"):
+            elif st.button("Generate AI Analysis", key=f"generate_ai_{source.report_id}",
+                           type="primary"):
                 with st.spinner("Generating analysis from saved measurements…"):
-                    analysis = generate_analysis(store, source, assessment, api_key)
+                    generate_analysis(store, source, assessment, api_key)
+                st.rerun()
     except ValueError as exc:
         st.warning(str(exc))
         return
     if analysis is None:
-        if not store.can_edit:
-            st.caption("An owner can generate an analysis for this report.")
         return
     if not isinstance(analysis, dict):
         st.warning("The saved analysis could not be read.")
         return
     if "error" in analysis:
-        st.caption(analysis["error"])
+        if store.can_edit:
+            st.caption(analysis["error"])
         return
     if "overview" not in analysis:
-        st.caption("Generation is in progress or its result has not been confirmed.")
+        if store.can_edit:
+            st.caption("Generation is in progress or its result has not been confirmed.")
         return
 
-    st.markdown("#### Performance summary")
-    st.write(analysis["overview"])
-    st.markdown("#### Anomaly and baseline analysis")
-    st.write(analysis["anomaly"])
-    headings = {"findings": "Key findings", "explanations": "Possible explanations",
-                "actions": "Recommended actions"}
-    for group, heading in headings.items():
-        lines = [line for line in analysis["sections"][group] if line != analysis["overview"]]
-        if lines:
-            st.markdown(f"#### {heading}")
-            for line in lines:
-                st.write(f"• {line}")
+    with st.container(border=True):
+        st.subheader("AI-assisted analysis")
+        st.markdown("**Performance summary**")
+        st.markdown(analysis["overview"])
+        st.markdown("**Anomaly and baseline comparison**")
+        st.markdown(analysis["anomaly"])
+        headings = {"findings": "Key findings", "explanations": "Possible explanations",
+                    "actions": "Recommended actions"}
+        for group, heading in headings.items():
+            lines = [line for line in analysis["sections"][group] if line != analysis["overview"]]
+            if lines:
+                st.markdown(f"**{heading}**")
+                st.markdown("\n".join(f"- {line}" for line in lines))
 
-    cycles = source.evidence_snapshot["cycles"]
-    if source.kind == "cycle":
-        figure = build_report_trace(cycles[0], "Power")
-    else:
-        names = [cycle_names[str(c["cycle_id"])] for c in cycles]
-        power = [c["average_power_w"] if c["eligible_for_totals"] else None for c in cycles]
-        figure = go.Figure(go.Bar(x=names, y=power, marker_color="#4bdeeb"))
-        figure.add_hline(y=sum(p for p in power if p is not None) /
-                        sum(p is not None for p in power), line_dash="dot",
-                        annotation_text="Mean of included cycles")
-        figure.update_layout(title="Average active power by cycle", yaxis_title="Power (W)",
-                             height=320, template="plotly_dark")
-        st.caption("Cycles excluded by quality checks are left blank.")
-    if figure is not None:
-        render_resettable_chart(figure, chart_key=f"ai_report_{source.report_id}")
-    st.caption(f"OpenAI {MODEL} · {format_myt(analysis['generated_at'])} · "
-               f"Source report {source.report_id}")
-    if usage := analysis.get("usage"):
-        st.caption(
-            f"{usage['input_tokens']:,} input tokens · {usage['output_tokens']:,} output tokens"
-        )
+        cycles = source.evidence_snapshot["cycles"]
+        if source.kind == "cycle":
+            figure = build_report_trace(cycles[0], "Power")
+        else:
+            names = [cycle_names[str(c["cycle_id"])] for c in cycles]
+            power = [c["average_power_w"] if c["eligible_for_totals"] else None for c in cycles]
+            figure = go.Figure(go.Bar(x=names, y=power, marker_color="#4bdeeb"))
+            figure.add_hline(y=sum(p for p in power if p is not None) /
+                            sum(p is not None for p in power), line_dash="dot",
+                            annotation_text="Mean of included cycles")
+            figure.update_layout(title="Average active power by cycle", yaxis_title="Power (W)",
+                                 height=320, template="plotly_dark")
+            st.caption("Cycles excluded by quality checks are left blank.")
+        if figure is not None:
+            render_resettable_chart(figure, chart_key=f"ai_report_{source.report_id}")
+        st.caption(f"OpenAI {MODEL} · {format_myt(analysis['generated_at'])} · "
+                   f"Source report {source.report_id}")
+        if usage := analysis.get("usage"):
+            st.caption(
+                f"{usage['input_tokens']:,} input tokens · {usage['output_tokens']:,} output tokens"
+            )
 
 
 def render_reports() -> None:

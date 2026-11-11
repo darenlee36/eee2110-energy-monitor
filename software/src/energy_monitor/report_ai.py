@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from energy_monitor.reporting import ReportDraft, validate_report
 
 MODEL = "gpt-6-luna"
-VERSION = "report-insights-v1"
+VERSION = "report-insights-v2"
 
 
 class AnalysisError(ValueError):
@@ -56,17 +56,18 @@ def analysis_evidence(source: ReportDraft, assessment: dict | None) -> dict:
     if source.kind == "cycle":
         peak = cycles[0]["peak_power_w"]
         overview = (
-            f"The cycle ran for {duration:g} s, used {energy:.5f} kWh and drew "
-            f"{power:,.0f} W on average, peaking at {peak:,.0f} W. {cost}"
+            f"The cycle ran for **{duration:g} s** and used **{energy:.5f} kWh**. "
+            f"Average active power was **{power:,.0f} W**, with a peak of **{peak:,.0f} W**. "
+            f"{cost}"
         )
     else:
         overview = (
-            f"{len(included)} of {source.cycle_count} cycles contribute to the averages. "
-            f"Mean duration was {duration:.1f} s, mean active power {power:,.0f} W and mean "
-            f"energy {energy / len(included):.5f} kWh per cycle. "
-            f"Total energy was {energy:.5f} kWh. {cost}"
+            f"**{len(included)} of {source.cycle_count} cycles** contribute to the averages. "
+            f"Mean duration was **{duration:.1f} s**, mean active power **{power:,.0f} W**, "
+            f"and mean energy **{energy / len(included):.5f} kWh** per cycle. "
+            f"Total energy was **{energy:.5f} kWh**. {cost}"
         )
-    findings = {"overview": overview}
+    findings = {}
     explanations = {
         "conditions": (
             "Water volume and starting temperature can affect heating time. "
@@ -82,11 +83,18 @@ def analysis_evidence(source: ReportDraft, assessment: dict | None) -> dict:
         shortest, shortest_cycle = min(included, key=lambda pair: pair[1]["duration_seconds"])
         low_power = min(c["average_power_w"] for _, c in included)
         high_power = max(c["average_power_w"] for _, c in included)
-        findings["spread"] = (
-            f"Mean active power ranged from {low_power:,.0f} to {high_power:,.0f} W. "
-            f"Heating duration ranged from {shortest_cycle['duration_seconds']} to "
-            f"{longest_cycle['duration_seconds']} s."
+        power_spread = (
+            f"All included cycles averaged **{low_power:,.0f} W**."
+            if low_power == high_power else
+            f"Average active power ranged from **{low_power:,.0f} to {high_power:,.0f} W**."
         )
+        shortest_s = shortest_cycle["duration_seconds"]
+        longest_s = longest_cycle["duration_seconds"]
+        duration_spread = (
+            f"Each included run lasted **{shortest_s} s**." if shortest_s == longest_s else
+            f"Heating time ranged from **{shortest_s} to {longest_s} s**."
+        )
+        findings["spread"] = f"{power_spread} {duration_spread}"
         if longest != shortest:
             actions["compare_extremes"] = (
                 f"Compare the operating notes for entries {shortest} and {longest}, "
@@ -103,10 +111,25 @@ def analysis_evidence(source: ReportDraft, assessment: dict | None) -> dict:
         anomaly = assessment["summary"]
         findings["baseline"] = assessment["comparison"]
         if assessment["pattern"] in ("unusual", "warning"):
-            explanations["unusual"] = (
-                "Differences in load or starting conditions could contribute to the recorded "
-                "deviation. The score alone cannot establish the cause."
-            )
+            if assessment.get("duration_led"):
+                explanations["unusual"] = (
+                    "Heating time differed more from the reference than power did. "
+                    "A change in water volume or starting temperature could contribute."
+                )
+                actions["compare_duration"] = (
+                    "Compare heating time with a run using the same water volume and "
+                    "starting temperature."
+                )
+            else:
+                explanations["unusual"] = (
+                    "Average power differed more from the reference than heating time did. "
+                    "Differences in supply voltage or the appliance load could contribute."
+                )
+                actions["compare_power"] = (
+                    "Compare the voltage and power traces with those from a similar run."
+                )
+    if not findings:
+        findings["coverage"] = "This comparison uses the measurements in the selected report."
     return {
         "overview": overview, "anomaly": anomaly,
         "choices": {"findings": findings, "explanations": explanations, "actions": actions},
@@ -128,7 +151,7 @@ def select_insights(evidence: dict, api_key: str) -> tuple[Selection, dict | Non
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": MODEL, "store": False, "reasoning": {"effort": "none"},
-                "max_output_tokens": 350, "tools": [],
+                "max_output_tokens": 600, "tools": [],
                 "instructions": (
                     "Select the most useful evidence-backed findings, possible explanations, "
                     "and actions for this appliance report. Return only candidate IDs. Prefer "
@@ -141,19 +164,24 @@ def select_insights(evidence: dict, api_key: str) -> tuple[Selection, dict | Non
                     "schema": schema,
                 }},
             },
-            timeout=httpx.Timeout(18, connect=5),
+            timeout=httpx.Timeout(30, connect=5),
         )
         response.raise_for_status()
         result = response.json()
-        if result["status"] != "completed" or any(
-            item["type"] not in ("message", "reasoning") for item in result["output"]
-        ):
-            raise ValueError("incomplete or unexpected output")
-        parts = [part for item in result["output"] if item["type"] == "message"
-                 for part in item["content"]]
-        if len(parts) != 1 or parts[0]["type"] != "output_text":
-            raise ValueError("structured text output required")
-        selection = Selection.model_validate_json(parts[0]["text"])
+        if result["status"] != "completed":
+            raise AnalysisError("OpenAI returned an incomplete analysis.")
+        outputs = result["output"]
+        if any(item["type"] not in ("message", "reasoning") for item in outputs):
+            raise AnalysisError("OpenAI returned an unsupported output type.")
+        messages = [item for item in outputs if item["type"] == "message"
+                    and item.get("phase") != "commentary"]
+        parts = messages[-1]["content"] if messages else []
+        if any(part["type"] == "refusal" for part in parts):
+            raise AnalysisError("OpenAI declined to analyze this report.")
+        response_text = "".join(part["text"] for part in parts if part["type"] == "output_text")
+        if not response_text:
+            raise AnalysisError("OpenAI returned no structured analysis.")
+        selection = Selection.model_validate_json(response_text)
         for group, ids in selection.model_dump().items():
             if len(ids) != len(set(ids)) or any(item not in choices[group] for item in ids):
                 raise ValueError("unsupported evidence reference")
@@ -164,8 +192,14 @@ def select_insights(evidence: dict, api_key: str) -> tuple[Selection, dict | Non
             429: "OpenAI reported a usage or rate limit.",
         }.get(exc.response.status_code, "OpenAI could not complete this request.")
         raise AnalysisError(reason) from None
-    except (httpx.RequestError, KeyError, TypeError, ValueError):
-        raise AnalysisError("OpenAI did not return a usable analysis.") from None
+    except httpx.TimeoutException:
+        raise AnalysisError("The OpenAI request timed out.") from None
+    except httpx.RequestError:
+        raise AnalysisError("The dashboard could not reach OpenAI.") from None
+    except AnalysisError:
+        raise
+    except (KeyError, TypeError, ValueError):
+        raise AnalysisError("OpenAI returned analysis that did not pass validation.") from None
     usage = result.get("usage")
     if not isinstance(usage, dict):
         return selection, None
