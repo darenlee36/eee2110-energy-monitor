@@ -208,6 +208,11 @@ class SQLiteTelemetryStore:
                 connection.execute(
                     "ALTER TABLE appliance_cycles ADD COLUMN manual_notes TEXT"
                 )
+            if "cloud_confirmed" not in cycle_columns:
+                connection.execute(
+                    "ALTER TABLE appliance_cycles ADD COLUMN cloud_confirmed INTEGER "
+                    "NOT NULL DEFAULT 0 CHECK (cloud_confirmed IN (0, 1))"
+                )
             annotation_columns = {
                 row["name"] for row in connection.execute(
                     "PRAGMA table_info(cycle_label_assignments)"
@@ -515,11 +520,19 @@ class SQLiteTelemetryStore:
                             or CycleDetectionSettings.model_validate_json(current[4]) != settings):
                         raise ValueError("Cloud appliance rule changed after publication.")
                     continue
-                connection.execute(
-                    """INSERT INTO cycle_detection_versions
-                       VALUES (?, ?, 'simulation_default', ?)""",
-                    (version, settings.model_dump_json(), effective_iso),
+                # A saved cycle can arrive before its actual rule. Upgrade only the
+                # placeholder used to satisfy the cache's summary foreign key.
+                upgraded = connection.execute(
+                    """UPDATE cycle_detection_versions SET settings_json = ?, effective_at = ?
+                       WHERE version = ? AND settings_json = '{}'""",
+                    (settings.model_dump_json(), effective_iso, version),
                 )
+                if not upgraded.rowcount:
+                    connection.execute(
+                        """INSERT INTO cycle_detection_versions
+                           VALUES (?, ?, 'simulation_default', ?)""",
+                        (version, settings.model_dump_json(), effective_iso),
+                    )
                 connection.execute("INSERT INTO appliance_rule_versions VALUES (?, ?, ?, ?)", entry)
 
     def process_cycles(
@@ -603,7 +616,8 @@ class SQLiteTelemetryStore:
                         END,
                         detection_version = excluded.detection_version,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE NOT :preserve_terminal OR appliance_cycles.status = 'active'
+                    WHERE appliance_cycles.cloud_confirmed = 0
+                      AND (NOT :preserve_terminal OR appliance_cycles.status = 'active')
                     """,
                     {
                         **values,
@@ -736,6 +750,8 @@ class SQLiteTelemetryStore:
         )
         if "completion_seen_at" in row.keys():
             result["completion_seen_at"] = row["completion_seen_at"]
+        if "cloud_confirmed" in row.keys():
+            result["cloud_confirmed"] = bool(row["cloud_confirmed"])
         if "created_at" in row.keys():
             result["created_at"] = row["created_at"]
             result["updated_at"] = row["updated_at"]
@@ -1146,6 +1162,36 @@ class SQLiteTelemetryStore:
                 (str(cycle_id),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def restore_confirmed_sensor_cycles(self, summaries: list[CycleSummary]) -> None:
+        """Hydrate the disposable cache from verified metadata without importing samples."""
+        with closing(self._connect()) as connection, connection:
+            for cycle in summaries:
+                values = cycle.model_dump(mode="json")
+                connection.execute(
+                    """INSERT OR IGNORE INTO cycle_detection_versions
+                    (version, settings_json, calibration_status, effective_at)
+                    VALUES (?, '{}', 'simulation_default', ?)""",
+                    (cycle.detection_version, cycle.started_at.isoformat()),
+                )
+                connection.execute(
+                    """INSERT INTO appliance_cycles (
+                        cycle_id, device_id, profile_id, started_at, ended_at, start_sequence,
+                        end_sequence, status, assessment, summary_json, detection_version,
+                        cloud_confirmed
+                    ) VALUES (
+                        :cycle_id, :device_id, :profile_id, :started_at, :ended_at, :start_sequence,
+                        :end_sequence, :status, :assessment, :summary_json, :detection_version, 1
+                    ) ON CONFLICT(cycle_id) DO UPDATE SET
+                        started_at = excluded.started_at, ended_at = excluded.ended_at,
+                        end_sequence = excluded.end_sequence, status = excluded.status,
+                        assessment = excluded.assessment, summary_json = excluded.summary_json,
+                        detection_version = excluded.detection_version, cloud_confirmed = 1
+                    WHERE appliance_cycles.record_source = 'measured'
+                      AND (appliance_cycles.cloud_confirmed = 0
+                        OR appliance_cycles.summary_json <> excluded.summary_json)""",
+                    {**values, "summary_json": cycle.model_dump_json()},
+                )
 
     def restore_cloud_edits(self, state: dict[str, object]) -> None:
         """Refresh the disposable edit cache without altering raw telemetry."""

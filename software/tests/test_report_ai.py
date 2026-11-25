@@ -195,6 +195,7 @@ def test_hosted_reports_offer_generation_to_visitors_and_reopen_saved_chart(
     monkeypatch.setattr(httpx, "post", post)
     monkeypatch.setattr(SupabaseCycleStore, "_rpc", rpc)
     monkeypatch.setattr(SupabaseCycleStore, "refresh_edits", lambda self: None)
+    monkeypatch.setattr(SupabaseCycleStore, "refresh_cycle_history", lambda self: None)
     monkeypatch.setattr(SupabaseCycleStore, "refresh_appliance_rules", lambda self: None)
     monkeypatch.setattr(SupabaseCycleStore, "fetch_reports", lambda self, *a: [saved])
     monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)

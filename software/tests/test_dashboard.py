@@ -42,6 +42,9 @@ def test_public_cloud_has_annotation_without_admin_controls(tmp_path, monkeypatc
         "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_edits", lambda s: None
     )
     monkeypatch.setattr(
+        "energy_monitor.cloud_edits.SupabaseCycleStore.refresh_cycle_history", lambda s: None
+    )
+    monkeypatch.setattr(
         "energy_monitor.cloud_edits.SupabaseCycleStore.fetch_cycle_annotation", lambda *a: {}
     )
     monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
@@ -167,10 +170,10 @@ def test_cycles_mode_defaults_to_latest_completed_cycle(
         "Duration",
         "Energy",
         "Charge",
-        "Label",
+        "Run label",
         "Source",
         "Assessment",
-        "Status",
+        "Detection status",
     ]
     assert table.iloc[0]["Start (MYT)"] == "12 Sep, 14:00"
     assert table.iloc[0]["Duration"] == "2m 25s"
@@ -587,6 +590,7 @@ def test_reports_public_cloud_reads_cache_without_generation(tmp_path, monkeypat
     monkeypatch.setenv("ENERGY_MONITOR_EDIT_PASSWORD", "")
     monkeypatch.setenv("ENERGY_MONITOR_DB", str(database))
     monkeypatch.setattr(SupabaseCycleStore, "refresh_edits", lambda s: None)
+    monkeypatch.setattr(SupabaseCycleStore, "refresh_cycle_history", lambda s: None)
     monkeypatch.setattr("energy_monitor.supabase_sync.sync_supabase_telemetry", lambda *a: 0)
     def unavailable(*args, **kwargs):
         raise SupabaseSyncError("Cloud unavailable")
@@ -891,7 +895,7 @@ def test_source_filter_separates_simulated_history_from_sensor_view(tmp_path, mo
         "Simulated test records").run()
     assert not app.exception
     assert set(app.dataframe[0].value["Source"]) == {"Simulated"}
-    assert "Status" in app.dataframe[0].value.columns
+    assert "Detection status" in app.dataframe[0].value.columns
     next(s for s in app.selectbox if s.label == "Data source filter").set_value(
         "Sensor-mode records").run()
     assert not app.dataframe

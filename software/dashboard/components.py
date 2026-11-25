@@ -20,6 +20,7 @@ from energy_monitor.dashboard_queries import (
     CycleListItem,
     LiveView,
     get_cycle_detail,
+    is_incomplete_run,
 )
 from energy_monitor.metrics import sampling_gap_counts
 from energy_monitor.models import (
@@ -1221,7 +1222,7 @@ def render_cycle_filters(store: SQLiteTelemetryStore, now: datetime) -> tuple[st
                 "Until (MYT, exclusive)", value=time(15), step=60, key="cycle_time_end")
             st.caption("Start included · end excluded · same-day windows only.")
     status = st.segmented_control(
-        "Cycle status",
+        "Assessment / incomplete runs",
         ["All", "Normal", "Unusual", "Incomplete"],
         key="status_filter",
     )
@@ -1324,13 +1325,17 @@ def render_cycle_history(items: list[CycleListItem]) -> UUID | None:
                 ),
                 "Energy": f"{item.energy_kwh:.4f} kWh",
                 "Charge": item.charge_text,
-                "Label": item.cycle_label or "Unlabelled",
+                "Run label": item.cycle_label or "Unlabelled",
                 "Source": item.source_label,
                 "Assessment": item.assessment.value.replace("_", " ").title(),
-                "Status": item.status.value.title(),
+                "Detection status": item.status.value.title(),
             }
             for item in items
         ]
+    )
+    st.caption(
+        "Run label is the saved annotation; detection status is the detector result. "
+        "Only completed sensor runs labelled Complete get a cycle number."
     )
     st.caption("Table assessments use cycle rules. Experimental model results appear separately.")
     event = st.dataframe(
@@ -1387,7 +1392,7 @@ def render_cycle_totals(items: list[CycleListItem]) -> None:
     by_source = defaultdict(list)
     for item in unique.values():
         if (item.status is CycleStatus.COMPLETED
-                and (item.cycle_label or "").strip().casefold() != "incomplete"):
+                and not is_incomplete_run(item.status, item.cycle_label)):
             by_source[item.source_label].append(item)
     with st.container(border=True, key="cycle-totals"):
         st.subheader("Filtered cycle totals")

@@ -149,7 +149,7 @@ def dashboard_now() -> datetime:
     return datetime.now(UTC)
 
 
-def sync_cloud_source() -> None:
+def sync_cloud_source(*, include_cycle_history: bool = False) -> None:
     if not use_supabase:
         return
     if supabase_config is None:
@@ -157,12 +157,18 @@ def sync_cloud_source() -> None:
         return
     try:
         sync_supabase_telemetry(store, supabase_config)
-        if isinstance(store, SupabaseCycleStore):
-            store.refresh_edits()
     except SupabaseSyncError:
-        st.warning("Cloud sync unavailable. Showing locally cached data.")
-    except ValueError:
-        st.warning("Cloud edits unavailable. Showing locally cached records.")
+        st.warning("Cloud telemetry sync unavailable. Showing locally cached readings.")
+    if isinstance(store, SupabaseCycleStore):
+        if include_cycle_history:
+            try:
+                store.refresh_cycle_history()
+            except SupabaseSyncError:
+                st.warning("Saved cloud cycle history unavailable. Cycle numbers may be partial.")
+        try:
+            store.refresh_edits()
+        except ValueError:
+            st.warning("Cloud annotations unavailable. Showing locally cached labels.")
 
 
 def render_owner_cycle_settings() -> None:
@@ -493,7 +499,7 @@ if st.session_state.mode == "Live":
 
     live_panel()
 elif st.session_state.mode == "Cycles":
-    sync_cloud_source()
+    sync_cloud_source(include_cycle_history=True)
     live_status = get_live_view(store, dashboard_now(), source_filter=source_filter)
     st.markdown(
         render_command_bar(live_status.connection_state, live_status.updated_at),
@@ -563,5 +569,5 @@ elif st.session_state.mode == "Cycles":
             detail.energy_label,
         )
 else:
-    sync_cloud_source()
+    sync_cloud_source(include_cycle_history=True)
     render_reports()

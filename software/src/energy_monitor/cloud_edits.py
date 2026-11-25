@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -125,6 +126,43 @@ class SupabaseCycleStore(SQLiteTelemetryStore):
         if not isinstance(state, dict):
             raise ValueError("Invalid cloud edit state")
         self.restore_cloud_edits(state)
+
+    def refresh_cycle_history(self) -> None:
+        """Read saved sensor cycles independently of the raw-telemetry cursor."""
+        params = {
+            "select": "cycle_id,summary", "status": "eq.completed",
+            "record_source": "eq.measured", "summary->>data_origin": "eq.sensor",
+            "order": "cycle_id.asc", "limit": "200",
+        }
+        summaries: list[CycleSummary] = []
+        cursor = None
+        try:
+            for _ in range(100):
+                response = httpx.get(
+                    f"{self.config.url}/rest/v1/appliance_cycles",
+                    headers={"apikey": self.config.service_role_key},
+                    params=params, timeout=10,
+                )
+                response.raise_for_status()
+                rows = response.json()
+                if not isinstance(rows, list) or len(rows) > 200:
+                    raise ValueError("invalid cycle history page")
+                for row in rows:
+                    summary = CycleSummary.model_validate(row["summary"])
+                    if (str(summary.cycle_id) != row["cycle_id"]
+                            or summary.status.value != "completed"
+                            or summary.data_origin != "sensor"
+                            or (cursor is not None and row["cycle_id"] <= cursor)):
+                        raise ValueError("invalid or out-of-order saved cycle")
+                    cursor = row["cycle_id"]
+                    summaries.append(summary)
+                if len(rows) < 200:
+                    self.restore_confirmed_sensor_cycles(summaries)
+                    return
+                params["cycle_id"] = f"gt.{cursor}"
+            raise ValueError("cycle history did not finish within the page limit")
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
+            raise SupabaseSyncError("Saved cloud cycle history could not be loaded.") from exc
 
     def fetch_first_assessment(self, cycle_id: str) -> dict | None:
         value = self._rpc("read_intelligence_first_score", {

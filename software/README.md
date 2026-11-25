@@ -137,6 +137,11 @@ The saved cursor resumes after restarts and does not discard delayed device time
 that share an arrival time. Import retries are idempotent. Never put the server key in ESP32
 firmware, browser code, or source control. Legacy projects may use `SUPABASE_SERVICE_ROLE_KEY`.
 
+Cycles and Reports also load already confirmed sensor-cycle summaries directly from Supabase
+before restoring saved annotations. A fresh cache can therefore show the historical cycle numbers
+without first replaying every telemetry page. The Cycles table distinguishes the saved run label
+from the detector's status; full traces continue to depend on the raw-telemetry cache.
+
 In Supabase mode, manual records, saved labels, label removal (archival), and cycle assignments
 are written transactionally to Supabase and restored into a fresh SQLite cache. The additive
 `durable_dashboard_edits` migration uses existing tables and server-only RPC functions; anonymous

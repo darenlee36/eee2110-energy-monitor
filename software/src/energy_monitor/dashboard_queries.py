@@ -414,6 +414,11 @@ def complete_sensor_cycle_numbers(rows: list[dict]) -> dict[str, int]:
     return {cycle_id: number for number, cycle_id in enumerate(numbered, start=1)}
 
 
+def is_incomplete_run(status: CycleStatus, label: str | None) -> bool:
+    """A detected ending does not override an operator's incomplete-run annotation."""
+    return status is CycleStatus.INCOMPLETE or (label or "").strip().casefold() == "incomplete"
+
+
 def list_cycle_items(
     store: SQLiteTelemetryStore,
     status_filter: str = "all",
@@ -438,7 +443,9 @@ def list_cycle_items(
     elif status_filter == "unusual":
         rows = [row for row in rows if row["assessment"] == CycleAssessment.UNUSUAL.value]
     elif status_filter == "incomplete":
-        rows = [row for row in rows if row["status"] == CycleStatus.INCOMPLETE.value]
+        rows = [row for row in rows if is_incomplete_run(
+            CycleStatus(row["status"]), row.get("custom_label")
+        )]
     elif status_filter != "all":
         raise ValueError("unsupported status filter")
     if label_filter == "__unlabelled__":
@@ -495,14 +502,23 @@ def get_cycle_detail(
         load_tariff_catalog(CATALOG_PATH),
     )
     record_source = str(row.get("record_source", "measured"))
-    chart_summary = (
-        "Manual record; no raw telemetry available"
-        if record_source == "manual"
-        else (
+    if record_source == "manual":
+        chart_summary = "Manual record; no raw telemetry available"
+    elif row.get("cloud_confirmed") and (
+        len(readings) < summary.sample_count or not readings
+        or readings[0].sample_sequence != summary.start_sequence
+        or readings[-1].sample_sequence != summary.end_sequence
+    ):
+        readings = []
+        chart_summary = (
+            "The saved cycle summary is available. Its full trace has not synced to this "
+            "dashboard yet."
+        )
+    else:
+        chart_summary = (
             f"{len(readings)} readings from cycle start to cycle end; "
             f"peak {summary.peak_power_w:.0f} W"
         )
-    )
     return CycleDetail(
         summary=summary,
         readings=readings,
